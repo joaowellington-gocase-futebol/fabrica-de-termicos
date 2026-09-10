@@ -28,6 +28,7 @@
     cores: null,       // saída do agente Variação de cor
     colecao: null,     // saída do agente Set/Coleção
     pecas: [],         // [{canvas, x, y, w, h, area, on}]
+    fundo: null,       // laudo do especialista em Fundo
     rotabPrompt: null, // rota generativa: prompt de geração (visão -> texto, PIAPP)
     escolhidas: [],    // chaves de máscara
     plano: null,       // saída do agente Compositor
@@ -83,8 +84,30 @@
     var a = S.agentes[agente];
     return api("/api/rodar", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agente: agente, entrada: entrada, system: a ? a.system : "" })
+      body: JSON.stringify({
+        agente: agente, entrada: entrada, system: a ? a.system : "",
+        // a sessão é a arte em curso: é o que faz o recado de um especialista
+        // chegar ao outro mesmo em etapas diferentes
+        sessao: S.case ? S.case.identifier : "avulso"
+      })
     });
+  }
+
+  /** Mostra o que a mesa trocou até agora. */
+  function mesaDeRecados(destino) {
+    if (!S.case) return;
+    api("/api/recados?sessao=" + encodeURIComponent(S.case.identifier)).then(function (j) {
+      var rs = j.recados || [];
+      if (!rs.length) { destino.innerHTML = ""; return; }
+      destino.innerHTML = '<span class="rot" style="margin-top:14px">conversa entre os especialistas</span>' +
+        rs.map(function (r) {
+          return '<div style="font-size:12.5px;padding:6px 9px;border-left:2px solid var(--accent);' +
+                 'background:var(--surface-2);border-radius:0 5px 5px 0;margin-bottom:5px">' +
+                 '<span class="mono" style="font-size:10.5px;color:var(--accent-ink)">' +
+                 esc(r.de) + ' → ' + esc(r.para) + (Number(r.lido) ? ' · lido' : ' · pendente') + '</span><br>' +
+                 '<b style="font-weight:500">' + esc(r.assunto) + '</b> — ' + esc(r.pedido) + '</div>';
+        }).join("");
+    }).catch(function () {});
   }
 
   // ══════════════════════════════ geometria ══════════════════════════════
@@ -637,9 +660,10 @@
   function etapaSeparar(palco) {
     if (rotaGenerativa()) { etapaSepararGenerativa(palco); return; }
     var v = painel("Separador",
-      "Aqui não tem IA: o fundo sai por preenchimento a partir das bordas e cada motivo é " +
-      "recortado por vizinhança de pixel. A arte continua exatamente a mesma — nada é redesenhado. " +
-      "Desmarque o que for ruído ou o que o agente pediu para remover.");
+      "O recorte é código: o fundo sai por preenchimento a partir das bordas e cada motivo é " +
+      "separado por vizinhança de pixel. A arte continua a mesma, nada é redesenhado. " +
+      "Quem decide a <b>tolerância</b> é o especialista em Fundo — pergunte a ele antes de separar. " +
+      "Depois, desligue o que for sujeira ou o que o Leitor apontou para remover.");
     var ctrl = el("div", null,
       '<div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">' +
         '<label><span class="rot">tolerância do fundo</span>' +
@@ -648,13 +672,47 @@
         '<label><span class="rot">tamanho mínimo da peça</span>' +
           '<input type="range" id="amin" min="1" max="40" value="6" style="width:180px"> ' +
           '<span class="mono" id="aminv">0,06%</span></label>' +
+        '<button class="btn" type="button" id="fundoAg">Perguntar ao Fundo</button>' +
         '<button class="btn" type="button" id="sep">Separar</button>' +
       '</div>');
     v.bd.appendChild(ctrl);
+    var laudo = el("div"); laudo.style.marginTop = "12px";
+    v.bd.appendChild(laudo);
     var saida = el("div"); saida.style.marginTop = "16px";
     v.bd.appendChild(saida);
+    var mesa = el("div");
+    v.bd.appendChild(mesa);
     palco.appendChild(v.p);
     var prox2 = avancar(v.ft, "Escolher as máscaras", 5, S.pecas.length > 0);
+
+    // O Fundo é quem sabe a tolerância. Antes disso era um número no escuro.
+    $("fundoAg").addEventListener("click", function () {
+      var b = $("fundoAg");
+      b.disabled = true; b.textContent = "Perguntando…";
+      laudo.innerHTML = '<div class="carregando"><span class="spin"></span>o Fundo está olhando…</div>';
+      rodar("fundo", S.case.arte).then(function (r) {
+        if (!r.ok) throw new Error(r.erro);
+        var d = r.dados;
+        S.fundo = d;
+        var t = Number(d.tolerancia_recomendada);
+        if (t >= 20 && t <= 220) { $("tol").value = t; $("tolv").textContent = t; }
+        laudo.innerHTML =
+          '<div class="pilulas">' +
+            '<span class="pil ok">Fundo</span>' +
+            '<span class="pil">' + esc(d.tipo || "—") + '</span>' +
+            '<span class="pil">tolerância ' + esc(t) + '</span>' +
+            '<span class="pil"><i class="sw" style="display:inline-block;width:11px;height:11px;' +
+              'vertical-align:-1px;background:' + esc(d.cor_dominante || "#ccc") + '"></i> ' +
+              esc(d.cor_dominante || "") + '</span>' +
+            (d.removivel === false ? '<span class="pil no">não removível — rota generativa</span>' : "") +
+          '</div>' +
+          '<div style="font-size:12.5px;color:var(--muted);margin-top:5px">' + esc(d.por_que || "") + '</div>';
+        mesaDeRecados(mesa);
+        toast("Fundo sugeriu tolerância " + t + ".");
+      }).catch(function (e) {
+        laudo.innerHTML = '<div class="aviso err">' + esc(e.message) + '</div>';
+      }).then(function () { b.disabled = false; b.textContent = "Perguntar ao Fundo"; });
+    });
 
     $("tol").addEventListener("input", function (e) { $("tolv").textContent = e.target.value; });
     $("amin").addEventListener("input", function (e) {
@@ -719,7 +777,7 @@
           }, 30);
         });
       }).then(function () {
-        desenhar(); trilha();
+        desenhar(); mesaDeRecados(mesa); trilha();
         prox2.disabled = S.pecas.length === 0;
         toast(S.pecas.length + " peças recortadas" +
               (S.desligadas ? " · " + S.desligadas + " desligadas onde o Leitor apontou marca" : "") + ".");

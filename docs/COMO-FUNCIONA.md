@@ -46,6 +46,53 @@ generativo troca essa garantia por uma aposta — e ainda redesenha a arte que
 estava vendendo. Por isso os dois passos de geometria ficam em código, e os
 cinco de julgamento ficam com os agentes.
 
+## A mesa de especialistas
+
+Onze agentes, cada um com uma área e um limite. O ponto de delimitar não é
+burocracia: é impedir que dois agentes decidam a mesma coisa e se contradigam.
+Cada um declara, no próprio prompt:
+
+- **`area`** — o que só ele decide
+- **`fora`** — o que não é dele. Ao notar algo aqui, **não palpita: manda recado**
+  ao colega responsável.
+
+| agente | decide | não decide |
+|---|---|---|
+| curador | quais estampas entram e em que ordem | qualquer coisa da imagem |
+| leitor | o que a arte é e por qual rota vai | tolerância, qualidade do recorte, arranjo |
+| **fundo** | tipo de fundo e **a tolerância numérica do recorte** | os motivos, a composição |
+| **recorte** | o que é motivo, caco ou sujeira nas peças | onde as peças vão ficar |
+| colorista | cartelas e corpo de garrafa | desenho, arranjo, recorte |
+| colecao | quantas peças o set tem e o que difere | parâmetros de composição |
+| compositor | estilo, escala, densidade, margem | a emenda, a cor, se dá pra separar |
+| auditor | nota do padrão e o que mudar | marca de terceiro, nome, cor |
+| revisor | marca de terceiro e bloqueio | estética — não reprova por gosto |
+| batizador | nome, identificador, descrição | julgamento visual |
+| **tresd** | como a arte se lê no objeto curvo | a emenda no plano |
+
+### Como conversam
+
+Todo agente pode devolver `recados_para: [{para, assunto, pedido}]`. O recado
+é gravado em `env.DB` com a **sessão** — a estampa em curso — e entregue ao
+destinatário na próxima vez que ele rodar, dentro do prompt. Ele responde em
+`atendi`, dizendo o que fez com cada um, inclusive discordar.
+
+Lista vazia é resposta boa e comum: recado inventado atrapalha a mesa.
+
+### O caso que mostra por que isso vale
+
+O parâmetro de tolerância do recorte era um número no escuro. Eu descobri por
+varredura que 60 falhava (o papel texturizado sobrevivia e a arte inteira
+virava uma peça só) e que 90–120 funcionava; adotei 110 no braço.
+
+O especialista em Fundo, olhando a mesma arte, respondeu **105** — e explicou:
+*"papel com textura fibrosa fina e variação tonal moderada; 105 alcança a maior
+parte da variação preservando pétalas e folhas muito claras."*
+
+Na mesma resposta, mandou recado ao **revisor** sobre a marca `gocase` e o `A.`
+que viu na arte. Não era área dele; não engoliu nem decidiu — passou adiante.
+É esse o comportamento que a mesa existe para produzir.
+
 ## Um agente por pessoa
 
 Cada agente é um bloco isolado em [`app/src/agentes.ts`](../app/src/agentes.ts).

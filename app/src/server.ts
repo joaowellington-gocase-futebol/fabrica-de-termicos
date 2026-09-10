@@ -76,6 +76,17 @@ async function schema(env: Env): Promise<void> {
     `CREATE TABLE IF NOT EXISTS rotab_chunks (
        geracao_id INTEGER NOT NULL, idx INTEGER NOT NULL, b64 TEXT NOT NULL
      )`, []);
+  // Recados entre especialistas. Ficam por sessão de trabalho (a arte em curso),
+  // para que um agente leia o que outro deixou mesmo em etapas separadas.
+  await env.DB.exec(
+    `CREATE TABLE IF NOT EXISTS recados (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       sessao TEXT NOT NULL, de TEXT NOT NULL, para TEXT NOT NULL,
+       assunto TEXT NOT NULL DEFAULT '', pedido TEXT NOT NULL DEFAULT '',
+       lido INTEGER NOT NULL DEFAULT 0,
+       quando TEXT NOT NULL DEFAULT (datetime('now'))
+     )`, []);
+  await env.DB.exec('CREATE INDEX IF NOT EXISTS idx_recados ON recados(sessao, para, lido)', []);
   pronto = true;
 }
 
@@ -134,6 +145,7 @@ export default {
             const d = mapa.get(a.chave);
             return {
               chave: a.chave, nome: a.nome, oque: a.oque, visao: a.visao,
+              area: a.area, fora: a.fora,
               exemplo: a.exemplo, dono: d ? String(d.dono) : '',
               system: d && String(d.prompt) ? String(d.prompt) : a.system,
               customizado: !!(d && String(d.prompt)),
@@ -207,8 +219,41 @@ export default {
           system = String(salvo.rows[0]?.prompt || '') || ag.system;
         }
 
+        // ── a mesa conversa: entrega os recados pendentes para este especialista
+        const sessao = String((b as any).sessao || '').slice(0, 80) || 'avulso';
+        let pendentes: Record<string, unknown>[] = [];
+        try {
+          const q = await env.DB.query(
+            'SELECT id, de, assunto, pedido FROM recados WHERE sessao = ? AND para = ? AND lido = 0 ORDER BY id',
+            [sessao, ag.chave]);
+          pendentes = q.rows;
+        } catch { /* sem recado não impede o agente de trabalhar */ }
+
+        let corpo = ag.user(entrada);
+        if (pendentes.length) {
+          corpo += '\n\nRECADOS DE COLEGAS — leve em conta e registre em "atendi":\n' +
+            pendentes.map((r) => `- de ${r.de} · ${r.assunto}: ${r.pedido}`).join('\n');
+        }
+
         const r = await chamarAgente(
-          env, system, ag.user(entrada), ag.visao ? entrada : undefined, ag.temperatura);
+          env, system, corpo, ag.visao ? entrada : undefined, ag.temperatura);
+
+        // marca como lidos e guarda os recados que este agente deixou para os outros
+        if (r.ok) {
+          if (pendentes.length) {
+            for (const rc of pendentes) {
+              await env.DB.exec('UPDATE recados SET lido = 1 WHERE id = ?', [rc.id]);
+            }
+          }
+          const saiu = ((r.dados as any)?.recados_para || []) as { para?: string; assunto?: string; pedido?: string }[];
+          for (const rc of saiu.slice(0, 6)) {
+            const para = String(rc?.para || '');
+            if (!acharAgente(para) || para === ag.chave) continue;   // recado para colega que não existe é ruído
+            await env.DB.exec(
+              'INSERT INTO recados (sessao, de, para, assunto, pedido) VALUES (?, ?, ?, ?, ?)',
+              [sessao, ag.chave, para, String(rc.assunto || '').slice(0, 200), String(rc.pedido || '').slice(0, 600)]);
+          }
+        }
 
         await env.DB.exec(
           `INSERT INTO execucoes (agente, entrada, saida, ok, ms, tokens, quem)
@@ -219,6 +264,15 @@ export default {
            r.ok ? 1 : 0, r.ms, r.tokens ?? null, quem]);
 
         return json(r, r.ok ? 200 : 502);
+      }
+
+      // Quadro de recados da sessão — o que a mesa trocou até agora.
+      if (p === '/api/recados') {
+        const sessao = (url.searchParams.get('sessao') || 'avulso').slice(0, 80);
+        const q = await env.DB.query(
+          'SELECT de, para, assunto, pedido, lido, quando FROM recados WHERE sessao = ? ORDER BY id DESC LIMIT 40',
+          [sessao]);
+        return json({ recados: q.rows });
       }
 
       if (p === '/api/dono' && request.method === 'POST') {

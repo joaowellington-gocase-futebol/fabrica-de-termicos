@@ -14,6 +14,10 @@
 export interface Agente {
   chave: string;
   nome: string;
+  /** O que ESTE agente decide. Ninguém mais decide isso. */
+  area: string;
+  /** O que ele NÃO decide. Se notar algo aqui, manda recado — não opina. */
+  fora: string;
   dono: string;
   oque: string;
   visao: boolean;
@@ -25,12 +29,83 @@ export interface Agente {
 
 const JSON_ONLY = ' Responda APENAS um objeto JSON válido, sem markdown e sem texto antes ou depois.';
 
+/** Quem é quem na mesa. Todo agente conhece os colegas para saber a quem falar. */
+export const MESA: Record<string, string> = {
+  curador:    'o que vale adaptar',
+  leitor:     'o que a arte é e por qual rota vai',
+  fundo:      'o fundo e a tolerância de recorte',
+  recorte:    'a qualidade das peças recortadas',
+  colorista:  'cor e cartela',
+  colecao:    'o set e o que diferencia cada peça',
+  compositor: 'o arranjo dentro da máscara',
+  auditor:    'a nota do padrão montado',
+  revisor:    'marca de terceiro e bloqueio',
+  batizador:  'nome, SKU e descrição',
+  tresd:      'como a arte se lê no objeto 3D',
+};
+
+/**
+ * Bloco comum a todo agente: delimita a especialidade e abre o canal de recados.
+ *
+ * O ponto de delimitar é evitar que dois agentes decidam a mesma coisa e se
+ * contradigam. Quando um especialista vê algo fora da área dele, não engole nem
+ * palpita: manda recado a quem decide aquilo.
+ */
+function protocolo(chave: string, area: string, fora: string): string {
+  const colegas = Object.keys(MESA)
+    .filter((k) => k !== chave)
+    .map((k) => `${k} (${MESA[k]})`)
+    .join(', ');
+  return (
+    `VOCÊ É ESPECIALISTA, e trabalha numa mesa com outros. ` +
+    `SUA ÁREA — só você decide isto: ${area}. ` +
+    `FORA DA SUA ÁREA: ${fora}. Sobre isso você NÃO decide e NÃO palpita no seu resultado; ` +
+    `se notar algo que o colega precisa saber, mande um recado a ele. ` +
+    `COLEGAS: ${colegas}. ` +
+    `Se vierem recados para você, leve-os em conta de verdade e registre em "atendi" o que fez com cada um ` +
+    `(inclusive discordar, dizendo por quê). ` +
+    `Devolva "recados_para": [{"para":"<chave do colega>","assunto":"...","pedido":"..."}] apenas quando houver ` +
+    `algo concreto e acionável. Lista vazia é resposta boa e comum — recado inventado atrapalha a mesa. `
+  );
+}
+
+
+const AREA_CURADOR = 'quais estampas entram na fila e em que ordem, pesando tema, sazonalidade e saturação do catálogo';
+const FORA_CURADOR = 'qualquer coisa sobre a imagem em si — composição, cor, recorte, fundo';
+const AREA_LEITOR = 'o que a arte é (tipo, motivos, densidade, estilo) e por qual rota ela segue: recorte ou geração';
+const FORA_LEITOR = 'a tolerância exata do recorte (é do fundo), a qualidade das peças depois de recortadas (é do recorte), e o arranjo na máscara (é do compositor)';
+const AREA_COLORISTA = 'cartelas alternativas e em qual corpo de garrafa cada uma funciona';
+const FORA_COLORISTA = 'o desenho em si, o arranjo e o recorte';
+const AREA_COLECAO = 'quantas peças o set tem e o que diferencia cada uma';
+const FORA_COLECAO = 'os parâmetros numéricos de composição de cada peça — isso é do compositor';
+const AREA_COMPOSITOR = 'estilo de arranjo, escala, densidade alvo e margem dentro da máscara';
+const FORA_COMPOSITOR = 'a emenda (fecha por construção no código), a cor, e se a arte pode ser separada';
+const AREA_AUDITOR = 'a nota do padrão montado e o que mudar no arranjo';
+const FORA_AUDITOR = 'marca de terceiro (é do revisor), nome e cor';
+const AREA_REVISOR = 'se há marca, personagem ou obra de terceiro, e se isso bloqueia';
+const FORA_REVISOR = 'qualidade estética, composição e nota — não é seu papel reprovar por gosto';
+const AREA_BATIZADOR = 'nome, identificador, descrição e tags';
+const FORA_BATIZADOR = 'qualquer julgamento visual da arte';
+
+/** Estampa real usada como exemplo pronto nos agentes de visão. */
+const ARTE_EXEMPLO =
+  'https://custom-case-images.s3.amazonaws.com/prisma-render/prod-v2/previews/ramos-de-lavanda/100688/standard-iphone11/17773150714228854032720886829191875.png';
+
+const AREA_FUNDO = 'o fundo da arte: que tipo é, qual a cor dominante, quão uniforme, e QUAL TOLERÂNCIA o recorte deve usar';
+const FORA_FUNDO = 'os motivos em si, a composição e a cor da ilustração';
+const AREA_RECORTE = 'a qualidade das peças já recortadas: o que é motivo inteiro, o que é caco do mesmo desenho, o que é sujeira';
+const FORA_RECORTE = 'onde as peças vão ficar na máscara e em que escala — isso é do compositor';
+const AREA_TRESD = 'como a arte se lê no objeto cilíndrico de verdade: escala percebida, distorção na curva e o que some atrás da alça';
+const FORA_TRESD = 'a emenda em si (o auditor mede no plano) e marca de terceiro';
+
 export const AGENTES: Agente[] = [
 
   // ─────────────────────────────────────────────────────────────
   {
     chave: 'curador',
     nome: 'Curador',
+    area: 'quais estampas entram na fila e em que ordem, pesando tema, sazonalidade e saturação do catálogo',
+    fora: 'qualquer coisa sobre a imagem em si — composição, cor, recorte, fundo',
     dono: '',
     oque: 'Escolhe quais estampas de capinha valem virar garrafa térmica.',
     visao: false,
@@ -46,6 +121,7 @@ export const AGENTES: Agente[] = [
       ],
     }, null, 2),
     system:
+      protocolo('curador', AREA_CURADOR, FORA_CURADOR) +
       'Você é analista de portfólio da Gocase. Recebe estampas que vendem bem em capinha e ' +
       'ainda não existem em garrafa térmica. Decide quais valem adaptar AGORA. ' +
       'O número de vendas é só um dos sinais: pese também se o tema funciona num objeto que a ' +
@@ -61,12 +137,15 @@ export const AGENTES: Agente[] = [
   {
     chave: 'leitor',
     nome: 'Leitor',
+    area: 'o que a arte é (tipo, motivos, densidade, estilo) e por qual rota ela segue: recorte ou geração',
+    fora: 'a tolerância exata do recorte (é do fundo), a qualidade das peças depois de recortadas (é do recorte), e o arranjo na máscara (é do compositor)',
     dono: '',
     oque: 'Olha a estampa e diz se dá para separar os elementos. Decide o caminho de todo o resto.',
     visao: true,
     temperatura: 0.2,
     exemplo: 'https://custom-case-images.s3.amazonaws.com/prisma-render/prod-v2/previews/ramos-de-lavanda/100688/standard-iphone11/17773150714228854032720886829191875.png',
     system:
+      protocolo('leitor', AREA_LEITOR, FORA_LEITOR) +
       'Você analisa a arte de uma capinha que vai ser adaptada para uma garrafa térmica. ' +
       'A garrafa é cilíndrica: a arte dá a volta, então precisa virar padrão que se repete. ' +
       'Sua resposta decide o caminho: se os motivos podem ser RECORTADOS um a um e ' +
@@ -96,12 +175,15 @@ export const AGENTES: Agente[] = [
   {
     chave: 'colorista',
     nome: 'Variação de cor',
+    area: 'cartelas alternativas e em qual corpo de garrafa cada uma funciona',
+    fora: 'o desenho em si, o arranjo e o recorte',
     dono: '',
     oque: 'Propõe outras cartelas para a mesma arte, sem mudar o desenho. Etapa opcional.',
     visao: true,
     temperatura: 0.5,
     exemplo: 'https://custom-case-images.s3.amazonaws.com/prisma-render/prod-v2/previews/ramos-de-lavanda/100688/standard-iphone11/17773150714228854032720886829191875.png',
     system:
+      protocolo('colorista', AREA_COLORISTA, FORA_COLORISTA) +
       'Você recebe uma estampa e propõe variações de COR — o desenho continua o mesmo, muda a ' +
       'cartela. O destino é uma garrafa térmica de corpo branco, preto ou azul claro. ' +
       'Para cada variação diga em qual corpo ela funciona: arte muito clara some no branco, ' +
@@ -119,6 +201,8 @@ export const AGENTES: Agente[] = [
   {
     chave: 'colecao',
     nome: 'Set / Coleção',
+    area: 'quantas peças o set tem e o que diferencia cada uma',
+    fora: 'os parâmetros numéricos de composição de cada peça — isso é do compositor',
     dono: '',
     oque: 'Transforma uma estampa em conjunto: peças que conversam entre si na prateleira.',
     visao: false,
@@ -131,6 +215,7 @@ export const AGENTES: Agente[] = [
       pecas_do_set: 4,
     }, null, 2),
     system:
+      protocolo('colecao', AREA_COLECAO, FORA_COLECAO) +
       'Você monta um SET a partir de uma estampa: peças diferentes que se reconhecem como da ' +
       'mesma família quando ficam lado a lado na prateleira ou numa foto. ' +
       'Cada peça usa os MESMOS motivos e a MESMA paleta — o que muda é a densidade, a escala e ' +
@@ -145,10 +230,107 @@ export const AGENTES: Agente[] = [
     user: (e) => 'Monte o set a partir desta estampa:\n' + e,
   },
 
+
+
+  // ─────────────────────────────────────────────────────────────
+  {
+    chave: 'fundo',
+    nome: 'Fundo',
+    area: AREA_FUNDO,
+    fora: FORA_FUNDO,
+    dono: '',
+    oque: 'Lê o fundo e diz a tolerância que o recorte precisa. É o número que faz o separador acertar ou errar.',
+    visao: true,
+    temperatura: 0.1,
+    exemplo: ARTE_EXEMPLO,
+    system:
+      protocolo('fundo', AREA_FUNDO, FORA_FUNDO) +
+      'Você olha SÓ o fundo — o que está atrás dos motivos. O recorte apaga o fundo por ' +
+      'preenchimento a partir das quatro bordas, comparando cada pixel com a cor de borda dentro de ' +
+      'uma TOLERÂNCIA. Seu trabalho é entregar essa tolerância, e ela é a diferença entre funcionar e ' +
+      'não funcionar. ' +
+      'A escala vai de 20 a 220, e é distância de cor no espaço RGB: ' +
+      '20-60 para fundo chapado e perfeitamente uniforme; ' +
+      '90-130 para papel, linho, aquarela lavada, ruído leve — a maioria das artes da casa; ' +
+      '150-200 só para textura forte, com manchas e variação grande. ' +
+      'Passar do ponto é pior que faltar: tolerância alta demais come o desenho junto com o fundo, ' +
+      'e o resultado vem sem motivo nenhum. Quando estiver em dúvida entre dois valores, escolha o menor. ' +
+      'Fundo com gradiente ou com foto atrás não é removível por esse método — diga removivel=false e ' +
+      'mande recado ao leitor, porque nesse caso a arte tem de ir pela rota generativa. ' +
+      'Formato: {"tipo":"solido|textura|gradiente|foto|transparente","cor_dominante":"#RRGGBB",' +
+      '"uniformidade":0-1,"tolerancia_recomendada":20-220,"removivel":bool,' +
+      '"por_que":"...","risco":"nenhum|come_o_desenho|sobra_fundo","confianca":0-1,' +
+      '"atendi":[],"recados_para":[]}' + JSON_ONLY,
+    user: () => 'Analise o fundo desta arte e diga a tolerância de recorte.',
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  {
+    chave: 'recorte',
+    nome: 'Recorte',
+    area: AREA_RECORTE,
+    fora: FORA_RECORTE,
+    dono: '',
+    oque: 'Confere as peças recortadas: o que é motivo, o que é caco a juntar, o que é sujeira.',
+    visao: true,
+    temperatura: 0.2,
+    exemplo: ARTE_EXEMPLO,
+    system:
+      protocolo('recorte', AREA_RECORTE, FORA_RECORTE) +
+      'Você recebe uma folha de contato: as peças que o recorte automático produziu, numeradas, lado a ' +
+      'lado sobre xadrez de transparência. O recorte separa por vizinhança de pixel, e por isso erra de ' +
+      'dois jeitos previsíveis. ' +
+      'PRIMEIRO: quebra um desenho só em vários pedaços quando as partes não se tocam — uma flor cujas ' +
+      'pétalas ficaram soltas do caule, um ramo partido no meio. Esses pedaços precisam voltar a ser um: ' +
+      'aponte em funde_com. ' +
+      'SEGUNDO: traz sujeira — respingo, sombra solta, pedaço de moldura, fragmento de letra ou de marca ' +
+      'que sobrou. Isso é lixo: veredito "sujeira". ' +
+      'Peça que sozinha já é um motivo completo e usável recebe "motivo", e é o caso mais comum — não ' +
+      'invente problema onde a peça está boa. ' +
+      'Se você perceber que MUITAS peças são cacos, o problema não é peça a peça: é a tolerância do ' +
+      'fundo. Diga isso em ajuste_tolerancia e mande recado ao fundo. ' +
+      'Formato: {"pecas":[{"id":num,"veredito":"motivo|caco|sujeira","funde_com":[num],"nome":"..."}],' +
+      '"qualidade_geral":0-1,"ajuste_tolerancia":null|20-220,"confianca":0-1,' +
+      '"atendi":[],"recados_para":[]}' + JSON_ONLY,
+    user: (e) => 'Confira estas peças recortadas.' + (e && !/^https?:|^data:/.test(e) ? '\n' + e : ''),
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  {
+    chave: 'tresd',
+    nome: '3D',
+    area: AREA_TRESD,
+    fora: FORA_TRESD,
+    dono: '',
+    oque: 'Olha o render na garrafa e diz o que muda quando a arte deixa de ser plana.',
+    visao: true,
+    temperatura: 0.2,
+    exemplo: ARTE_EXEMPLO,
+    system:
+      protocolo('tresd', AREA_TRESD, FORA_TRESD) +
+      'Você recebe o render da garrafa com a arte já aplicada, e julga o que só aparece quando a arte ' +
+      'deixa de ser plana. No plano tudo se vê de uma vez; no objeto, não. ' +
+      'Três coisas mudam ao enrolar num cilindro: ' +
+      '1) só cerca de 40% da arte é visível de uma vez, então um motivo que se repete a cada volta ' +
+      'inteira pode nunca aparecer duas vezes para quem olha — e um motivo muito grande domina a face toda; ' +
+      '2) perto da silhueta a arte comprime e o desenho ali fica ilegível, então motivo importante ' +
+      'encostado na borda visível se perde; ' +
+      '3) a alça, a tampa e a base cobrem parte da superfície. ' +
+      'Julgue a escala percebida A UM METRO de distância, que é como a garrafa é vista de verdade — não ' +
+      'com o nariz colado. Diga se aumentaria ou diminuiria o motivo, e mande recado ao compositor com ' +
+      'o número, não com adjetivo. ' +
+      'Formato: {"leitura_no_objeto":"boa|confusa|vazia|pesada","escala_percebida":"pequena|certa|grande",' +
+      '"ajuste_escala_sugerido":0.6-1.8,"problemas":["..."],"nota":0-10,"confianca":0-1,' +
+      '"atendi":[],"recados_para":[]}' + JSON_ONLY,
+    user: () => 'Avalie como esta arte se lê aplicada na garrafa.',
+  },
+
   // ─────────────────────────────────────────────────────────────
   {
     chave: 'compositor',
     nome: 'Compositor',
+    area: 'estilo de arranjo, escala, densidade alvo e margem dentro da máscara',
+    fora: 'a emenda (fecha por construção no código), a cor, e se a arte pode ser separada',
     dono: '',
     oque: 'Monta o plano de como distribuir os motivos na área impressa da garrafa.',
     visao: false,
@@ -165,6 +347,7 @@ export const AGENTES: Agente[] = [
       },
     }, null, 2),
     system:
+      protocolo('compositor', AREA_COMPOSITOR, FORA_COMPOSITOR) +
       'Você é diretor de arte. Recebe a leitura de uma estampa e as medidas da área impressa de ' +
       'uma garrafa térmica, e escreve o plano de composição. ' +
       'A costura já é resolvida por código: cada peça é desenhada também deslocada de uma largura ' +
@@ -186,12 +369,15 @@ export const AGENTES: Agente[] = [
   {
     chave: 'auditor',
     nome: 'Auditor',
+    area: 'a nota do padrão montado e o que mudar no arranjo',
+    fora: 'marca de terceiro (é do revisor), nome e cor',
     dono: '',
     oque: 'Olha o padrão montado e dá nota. Reprovou, volta para o Compositor.',
     visao: true,
     temperatura: 0.2,
     exemplo: 'https://custom-case-images.s3.amazonaws.com/prisma-render/prod-v2/previews/ramos-de-lavanda/100688/standard-iphone11/17773150714228854032720886829191875.png',
     system:
+      protocolo('auditor', AREA_AUDITOR, FORA_AUDITOR) +
       'Você recebe o PADRÃO JÁ MONTADO — não a arte da capinha. Ele é um ladrilho que será ' +
       'impresso dando a volta na garrafa: a borda direita encosta na esquerda. ' +
       'Duas coisas que NÃO são defeito aqui, e você não deve apontar: ' +
@@ -216,12 +402,15 @@ export const AGENTES: Agente[] = [
   {
     chave: 'revisor',
     nome: 'Revisor',
+    area: 'se há marca, personagem ou obra de terceiro, e se isso bloqueia',
+    fora: 'qualidade estética, composição e nota — não é seu papel reprovar por gosto',
     dono: '',
     oque: 'Última porta antes do humano. Barra logo, texto e marca de terceiro.',
     visao: true,
     temperatura: 0.1,
     exemplo: 'https://custom-case-images.s3.amazonaws.com/prisma-render/prod-v2/previews/ramos-de-lavanda/100688/standard-iphone11/17773150714228854032720886829191875.png',
     system:
+      protocolo('revisor', AREA_REVISOR, FORA_REVISOR) +
       'Você é o revisor de marca, e olha a arte JÁ ADAPTADA, pouco antes de ela ir ao catálogo. ' +
       'Sua função é BARRAR, não aprovar por gentileza. ' +
       'Procure: marca registrada, escudo de time, personagem, cena de filme, jogo ou série, ' +
@@ -241,6 +430,8 @@ export const AGENTES: Agente[] = [
   {
     chave: 'batizador',
     nome: 'Batizador',
+    area: 'nome, identificador, descrição e tags',
+    fora: 'qualquer julgamento visual da arte',
     dono: '',
     oque: 'Dá nome, SKU e descrição para a estampa entrar no catálogo.',
     visao: false,
@@ -253,6 +444,7 @@ export const AGENTES: Agente[] = [
       nomes_ja_usados: ['Lavanda', 'Ramos de Lavanda', 'Natureza Lavanda'],
     }, null, 2),
     system:
+      protocolo('batizador', AREA_BATIZADOR, FORA_BATIZADOR) +
       'Você nomeia estampas da Gocase. Sugira 3 nomes curtos, de 2 a 5 palavras, em português: ' +
       'descritivos e vendáveis, sem aspas, sem numeração, sem emoji, e sem repetir nome já usado. ' +
       'O identificador NÃO é derivado do nome que você criou. Ele é o campo estampa_origem que ' +
