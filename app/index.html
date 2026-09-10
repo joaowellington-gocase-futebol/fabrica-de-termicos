@@ -1,269 +1,194 @@
 <!doctype html>
-<html lang="pt-BR" data-theme="light">
+<html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Fábrica de Térmicos — Quadro da Equipe</title>
+<title>Agentes da Fábrica de Térmicos</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap">
 <style>
   :root{
-    --ground:#F4F6F6; --surface:#FFFFFF; --surface-2:#EDF1F1; --surface-3:#E2E8E8;
+    --ground:#F4F6F6; --surface:#FFF; --surface-2:#EDF1F1;
     --ink:#141B1E; --ink-2:#3D4A50; --muted:#6B7B82;
     --line:#D9E0E1; --line-2:#C3CDCF;
     --accent:#0E6E6E; --accent-soft:#DCEDEC; --accent-ink:#0A5252;
     --ok:#2E7D4F; --ok-soft:#DFEFE5;
     --warn:#9A6512; --warn-soft:#F6EBD6;
     --crit:#AE352C; --crit-soft:#F7E0DE;
-    --t1:#0E6E6E; --t2:#1F6F45; --t3:#6A4FBD; --t4:#AE352C; --t5:#9A6512; --t6:#2E6FA8;
-    --shadow:0 1px 2px rgba(20,27,30,.06),0 8px 22px -16px rgba(20,27,30,.3);
+    --shadow:0 1px 2px rgba(20,27,30,.06),0 8px 22px -18px rgba(20,27,30,.3);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0D1214; --surface:#141B1E; --surface-2:#1B2427;
+      --ink:#EAEFEF; --ink-2:#B7C3C6; --muted:#849499;
+      --line:#263237; --line-2:#33434A;
+      --accent:#4FBDB4; --accent-soft:#12312F; --accent-ink:#7FD6CD;
+      --ok:#5FBF87; --ok-soft:#122C1E;
+      --warn:#D9A44E; --warn-soft:#2E2413;
+      --crit:#E4796E; --crit-soft:#331A18;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 26px -18px rgba(0,0,0,.85);
+    }
   }
   :root[data-theme="dark"]{
-    --ground:#0D1214; --surface:#141B1E; --surface-2:#1B2427; --surface-3:#222D31;
+    --ground:#0D1214; --surface:#141B1E; --surface-2:#1B2427;
     --ink:#EAEFEF; --ink-2:#B7C3C6; --muted:#849499;
     --line:#263237; --line-2:#33434A;
     --accent:#4FBDB4; --accent-soft:#12312F; --accent-ink:#7FD6CD;
     --ok:#5FBF87; --ok-soft:#122C1E;
     --warn:#D9A44E; --warn-soft:#2E2413;
     --crit:#E4796E; --crit-soft:#331A18;
-    --t1:#4FBDB4; --t2:#5FBF87; --t3:#A78BE8; --t4:#E4796E; --t5:#D9A44E; --t6:#6FA8DC;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 26px -18px rgba(0,0,0,.85);
   }
   *{box-sizing:border-box}
-  html,body{margin:0}
   body{
-    background:var(--ground); color:var(--ink); font-size:14px; line-height:1.5;
-    font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-    -webkit-font-smoothing:antialiased;
+    margin:0;background:var(--ground);color:var(--ink);font-size:14.5px;line-height:1.55;
+    font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;
   }
   .mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
-  h1,h2,h3{margin:0;font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif;text-wrap:balance}
-  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:500;
-    letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
-  .shell{max-width:1340px;margin:0 auto;padding:0 22px 80px}
+  h1,h2,h3{margin:0;text-wrap:balance}
+  .shell{max-width:1120px;margin:0 auto;padding:0 22px 80px}
 
-  header.top{background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}
-  .top-in{max-width:1340px;margin:0 auto;padding:12px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-  .brand h1{font-size:18px;font-weight:700;letter-spacing:-.01em}
-  .brand span{font-size:11.5px;color:var(--muted)}
-  .tabs{display:flex;gap:3px;margin-left:18px;background:var(--surface-2);padding:3px;border-radius:7px}
-  .tab{font:inherit;font-size:13px;font-weight:500;border:0;background:none;color:var(--ink-2);
-    padding:6px 14px;border-radius:5px;cursor:pointer}
-  .tab[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
-  .tab:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-  .top-right{margin-left:auto;display:flex;align-items:center;gap:10px}
-  .whoami{font-size:12px;color:var(--muted)}
-  .icon-btn{font:inherit;font-size:13px;border:1px solid var(--line-2);background:var(--surface);
-    color:var(--ink);border-radius:6px;padding:6px 10px;cursor:pointer}
-  .icon-btn:hover{border-color:var(--muted)}
-  .icon-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  header{background:var(--surface);border-bottom:1px solid var(--line)}
+  .hd{max-width:1120px;margin:0 auto;padding:20px 22px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+  .hd h1{font-size:21px;font-weight:600;letter-spacing:-.015em}
+  .hd p{margin:4px 0 0;color:var(--ink-2);font-size:14px;max-width:62ch}
+  .hd .right{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+  .badge{font-family:"IBM Plex Mono",monospace;font-size:11.5px;padding:4px 10px;border-radius:999px;border:1px solid}
+  .badge.on{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
+  .badge.off{background:var(--crit-soft);color:var(--crit);border-color:var(--crit)}
 
-  .view[hidden]{display:none}
-  .page-hd{padding:22px 0 14px}
-  .page-hd h2{font-size:20px;font-weight:700}
-  .page-hd p{margin:5px 0 0;color:var(--ink-2);max-width:74ch;font-size:13.5px}
+  .aviso{
+    margin:18px 0 0;background:var(--crit-soft);border:1px solid var(--crit);border-radius:8px;
+    padding:13px 16px;color:var(--crit);font-size:14px;
+  }
+  .aviso b{display:block;margin-bottom:3px}
+  .aviso code{font-family:"IBM Plex Mono",monospace;font-size:12.5px;background:rgba(0,0,0,.08);
+    padding:1px 5px;border-radius:3px}
+  .aviso[hidden]{display:none}
 
-  /* ---------- mapa mental ---------- */
-  .mapa-wrap{background:var(--surface);border:1px solid var(--line);border-radius:8px;
-    box-shadow:var(--shadow);overflow-x:auto}
-  .mapa-wrap svg{display:block;min-width:960px;width:100%;height:auto}
-  .n-txt{font-family:"IBM Plex Sans",sans-serif;font-size:13px;fill:var(--ink)}
-  .n-sub{font-family:"IBM Plex Mono",monospace;font-size:10px;fill:var(--muted)}
-  .n-key{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600}
-  .n-hub{font-family:"IBM Plex Sans Condensed",sans-serif;font-size:16px;font-weight:700;fill:var(--ground)}
-  .n-branch{font-family:"IBM Plex Sans Condensed",sans-serif;font-size:12px;font-weight:600;
-    letter-spacing:.06em;fill:var(--ink)}
-  .hit{cursor:pointer}
-  .hit:hover .cardbg{stroke:var(--accent);stroke-width:2}
-  .hit:focus-visible .cardbg{stroke:var(--accent);stroke-width:2.5}
-  .legenda{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:var(--muted)}
-  .legenda i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  /* esteira, uma linha */
+  .esteira{display:flex;gap:6px;align-items:stretch;margin:22px 0 6px;overflow-x:auto;padding-bottom:4px}
+  .et{flex:1;min-width:104px;background:var(--surface);border:1px solid var(--line);border-radius:6px;
+    padding:8px 10px;border-top:3px solid var(--line-2)}
+  .et b{display:block;font-size:12px;font-weight:500}
+  .et span{font-size:10.5px;color:var(--muted)}
+  .et.ia{border-top-color:var(--accent)}
+  .et.det{border-top-color:var(--ok)}
+  .esteira-leg{font-size:12.5px;color:var(--muted);margin:0 0 26px}
+  .esteira-leg i{display:inline-block;width:22px;height:3px;border-radius:2px;vertical-align:3px;margin:0 5px 0 12px}
+  .esteira-leg i:first-child{margin-left:0}
 
-  /* ---------- board ---------- */
-  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
-  .filtro{font:inherit;font-size:12.5px;padding:5px 11px;border-radius:999px;cursor:pointer;
-    border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2)}
-  .filtro[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}
-  .filtro:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .btn{font:inherit;font-size:13px;font-weight:500;padding:7px 14px;border-radius:6px;cursor:pointer;
+  /* grade de agentes */
+  .grade{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  @media (max-width:840px){.grade{grid-template-columns:1fr}}
+  .ag{background:var(--surface);border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);
+    display:flex;flex-direction:column;overflow:hidden}
+  .ag-hd{padding:14px 16px 12px;border-bottom:1px solid var(--line)}
+  .ag-hd .l1{display:flex;align-items:center;gap:9px}
+  .ag-hd h2{font-size:16px;font-weight:600}
+  .tipo{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+    padding:2px 6px;border-radius:3px;background:var(--accent-soft);color:var(--accent-ink);border:1px solid var(--accent)}
+  .ag-hd p{margin:6px 0 0;font-size:13.5px;color:var(--ink-2)}
+  .dono{margin-left:auto;display:flex;align-items:center;gap:6px}
+  .dono input{font:inherit;font-size:12.5px;width:118px;padding:4px 8px;border-radius:5px;
+    border:1px dashed var(--line-2);background:transparent;color:var(--ink);text-align:right}
+  .dono input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-style:solid}
+  .dono input::placeholder{color:var(--muted)}
+
+  .ag-bd{padding:13px 16px;display:flex;flex-direction:column;gap:9px;flex:1}
+  .rot{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted)}
+  textarea,input.url{font:inherit;font-size:12.5px;font-family:"IBM Plex Mono",monospace;width:100%;
+    padding:9px 10px;border-radius:6px;border:1px solid var(--line-2);background:var(--surface-2);
+    color:var(--ink);resize:vertical;line-height:1.5}
+  textarea:focus,input.url:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+  .ent{min-height:96px}
+  .sys{min-height:150px;font-size:12px}
+
+  details{border-top:1px dashed var(--line);padding-top:9px}
+  summary{cursor:pointer;font-size:12.5px;color:var(--muted);list-style:none;display:flex;align-items:center;gap:7px}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"▸";display:inline-block;transition:transform .15s}
+  details[open] summary::before{transform:rotate(90deg)}
+  summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+  .sys-ft{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .sys-ft .tag{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--warn);
+    background:var(--warn-soft);border:1px solid var(--warn);padding:1px 6px;border-radius:3px}
+  .sys-ft .tag[hidden]{display:none}
+
+  .acoes{display:flex;gap:8px;align-items:center;padding:11px 16px;border-top:1px solid var(--line);
+    background:var(--surface-2)}
+  .btn{font:inherit;font-size:13.5px;font-weight:500;padding:8px 16px;border-radius:6px;cursor:pointer;
     border:1px solid var(--line-2);background:var(--surface);color:var(--ink)}
-  .btn:hover{border-color:var(--muted)}
+  .btn:hover:not(:disabled){border-color:var(--muted)}
   .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .btn:disabled{opacity:.55;cursor:default}
   .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-  .btn.primary:hover{background:var(--accent-ink);border-color:var(--accent-ink)}
-  .btn.danger{color:var(--crit);border-color:var(--crit);background:transparent}
+  .btn.primary:hover:not(:disabled){background:var(--accent-ink);border-color:var(--accent-ink)}
+  .btn.link{border:0;background:none;color:var(--muted);padding:8px 4px;text-decoration:underline}
+  .stat{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted)}
 
-  .colunas{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}
-  @media (max-width:1040px){.colunas{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  @media (max-width:600px){.colunas{grid-template-columns:1fr}}
-  .col{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;min-height:180px;
-    display:flex;flex-direction:column}
-  .col-hd{padding:10px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
-  .col-hd b{font-family:"IBM Plex Sans Condensed",sans-serif;font-size:12px;letter-spacing:.05em;
-    text-transform:uppercase}
-  .col-hd .n{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted)}
-  .col-body{padding:8px;display:flex;flex-direction:column;gap:8px;flex:1}
-  .col.drop{background:var(--accent-soft);outline:2px dashed var(--accent);outline-offset:-3px}
+  .saida{margin:0;padding:13px 16px;border-top:1px solid var(--line);background:var(--surface-2);
+    font-family:"IBM Plex Mono",monospace;font-size:11.5px;line-height:1.55;white-space:pre-wrap;
+    word-break:break-word;max-height:340px;overflow:auto}
+  .saida[hidden]{display:none}
+  .saida.erro{background:var(--crit-soft);color:var(--crit)}
 
-  .card{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--muted);
-    border-radius:6px;padding:10px 11px;cursor:grab;box-shadow:var(--shadow);display:grid;gap:6px}
-  .card:active{cursor:grabbing}
-  .card.dragging{opacity:.4}
-  .card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .card .ttl{font-size:13px;font-weight:500;line-height:1.35}
-  .card .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .tagk{font-family:"IBM Plex Mono",monospace;font-size:9.5px;font-weight:600;letter-spacing:.05em;
-    padding:1.5px 5px;border-radius:3px;color:#fff}
-  .tags{font-family:"IBM Plex Mono",monospace;font-size:9.5px;padding:1.5px 5px;border-radius:3px;
-    border:1px solid var(--line-2);color:var(--muted)}
-  .tag-ia{font-family:"IBM Plex Mono",monospace;font-size:9.5px;padding:1.5px 5px;border-radius:3px;
-    background:var(--accent-soft);color:var(--accent-ink);border:1px solid var(--accent)}
-  .tag-marco{font-size:9.5px;padding:1.5px 5px;border-radius:3px;background:var(--warn-soft);
-    color:var(--warn);border:1px solid var(--warn);font-family:"IBM Plex Mono",monospace}
-  .card .por{font-size:10.5px;color:var(--muted)}
-  .vazio{color:var(--muted);font-size:12px;text-align:center;padding:18px 8px}
+  .hist{margin-top:34px;border-top:1px solid var(--line);padding-top:16px}
+  .hist h3{font-size:13px;font-weight:600;margin-bottom:9px}
+  .hist table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .hist th{text-align:left;font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase;padding:5px 9px 5px 0;border-bottom:1px solid var(--line)}
+  .hist td{padding:6px 9px 6px 0;border-bottom:1px solid var(--line);color:var(--ink-2);vertical-align:top}
+  .hist td.n{font-family:"IBM Plex Mono",monospace;white-space:nowrap}
+  .pin{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .pin.ok{background:var(--ok)} .pin.no{background:var(--crit)}
 
-  /* ---------- equipe ---------- */
-  .trilhas{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}
-  .tr{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);
-    overflow:hidden}
-  .tr-hd{padding:11px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
-  .tr-hd .k{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:#fff;
-    padding:2px 7px;border-radius:4px}
-  .tr-body{padding:12px 14px;display:grid;gap:9px}
-  label.f{display:grid;gap:4px}
-  label.f span{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;
-    text-transform:uppercase;color:var(--muted)}
-  input.i,textarea.i,select.i{font:inherit;font-size:13px;padding:7px 9px;border-radius:5px;
-    border:1px solid var(--line-2);background:var(--surface);color:var(--ink);width:100%}
-  textarea.i{resize:vertical;min-height:62px;line-height:1.45}
-  input.i:focus,textarea.i:focus,select.i:focus{outline:2px solid var(--accent);outline-offset:-1px;
-    border-color:var(--accent)}
-  .tr-foot{display:flex;align-items:center;gap:9px;padding:0 14px 13px}
-  .tr-foot .prog{flex:1;height:5px;border-radius:3px;background:var(--surface-3);overflow:hidden}
-  .tr-foot .prog i{display:block;height:100%;background:var(--ok)}
-  .tr-foot .pct{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted)}
-
-  /* ---------- modal ---------- */
-  .modal{position:fixed;inset:0;background:rgba(10,16,18,.55);display:grid;place-items:center;
-    padding:20px;z-index:60}
-  .modal[hidden]{display:none}
-  .modal-card{background:var(--surface);border:1px solid var(--line);border-radius:10px;
-    width:min(560px,100%);max-height:88vh;overflow-y:auto;box-shadow:0 24px 60px -20px rgba(0,0,0,.5)}
-  .modal-hd{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center}
-  .modal-hd h3{font-size:15px;font-weight:600}
-  .modal-hd button{margin-left:auto;background:none;border:0;font-size:18px;cursor:pointer;color:var(--muted);
-    line-height:1;padding:2px 4px}
-  .modal-bd{padding:16px 18px;display:grid;gap:11px}
-  .g2{display:grid;grid-template-columns:1fr 1fr;gap:11px}
-  .modal-ft{padding:13px 18px;border-top:1px solid var(--line);display:flex;gap:9px;align-items:center}
-  .modal-ft .sp{margin-left:auto}
-  .chk{display:flex;align-items:center;gap:7px;font-size:13px}
-
-  .hist{margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
-  .hist ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:5px}
-  .hist li{font-size:12px;color:var(--muted);display:flex;gap:9px}
-  .hist li b{color:var(--ink-2);font-weight:500}
-  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);
-    color:var(--ground);padding:9px 16px;border-radius:7px;font-size:13px;z-index:80;box-shadow:var(--shadow)}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);
+    color:var(--ground);padding:9px 17px;border-radius:7px;font-size:13.5px;z-index:50;box-shadow:var(--shadow)}
   .toast[hidden]{display:none}
-  .toast.err{background:var(--crit)}
+  .toast.err{background:var(--crit);color:#fff}
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
 
-<header class="top">
-  <div class="top-in">
-    <div class="brand">
-      <h1>Fábrica de Térmicos</h1>
-      <span>quadro da equipe · 6 trilhas em paralelo</span>
+<header>
+  <div class="hd">
+    <div>
+      <h1>Agentes da Fábrica de Térmicos</h1>
+      <p>Seis agentes de IA que levam uma estampa de capinha até a garrafa térmica.
+         Cada um tem um dono, roda sozinho e pode ser ajustado sem mexer nos outros.</p>
     </div>
-    <div class="tabs" role="tablist">
-      <button class="tab" role="tab" id="tab-mapa"   aria-selected="true"  data-v="mapa">Mapa mental</button>
-      <button class="tab" role="tab" id="tab-board"  aria-selected="false" data-v="board">Board</button>
-      <button class="tab" role="tab" id="tab-equipe" aria-selected="false" data-v="equipe">Equipe</button>
-    </div>
-    <div class="top-right">
-      <span class="whoami" id="whoami"></span>
-      <button class="icon-btn" id="btn-tema" type="button" title="Alternar tema">◐</button>
+    <div class="right">
+      <span class="badge" id="b-token">verificando…</span>
+      <span class="mono" style="font-size:11.5px;color:var(--muted)" id="b-modelo"></span>
     </div>
   </div>
 </header>
 
 <div class="shell">
 
-  <!-- ============ MAPA ============ -->
-  <section class="view" id="v-mapa" role="tabpanel" aria-labelledby="tab-mapa">
-    <div class="page-hd">
-      <h2>Como é feito, e quem faz</h2>
-      <p>À esquerda, a esteira que transforma uma estampa de capinha em garrafa térmica.
-         À direita, as seis trilhas que constroem essa esteira em paralelo. Os números vêm
-         do board — clique em qualquer trilha para abrir os cards dela.</p>
-    </div>
-    <div class="mapa-wrap"><svg id="mapa" viewBox="0 0 1180 720" role="img"
-      aria-label="Mapa mental: a esteira de produção à esquerda e as seis trilhas da equipe à direita"></svg></div>
-    <div class="legenda">
-      <span><i style="background:var(--ok)"></i>determinístico — geometria em código</span>
-      <span><i style="background:var(--accent)"></i>agente de IA — AI Proxy</span>
-      <span><i style="background:var(--crit)"></i>trava dura — bloqueia a esteira</span>
-    </div>
-  </section>
+  <div class="aviso" id="aviso" hidden>
+    <b>Falta ligar o AI Proxy</b>
+    Nenhum agente roda até o token existir. Configure o segredo
+    <code>AI_PROXY_TOKEN</code> neste app e recarregue a página.
+  </div>
 
-  <!-- ============ BOARD ============ -->
-  <section class="view" id="v-board" role="tabpanel" aria-labelledby="tab-board" hidden>
-    <div class="page-hd">
-      <h2>Board</h2>
-      <p>Arraste um card entre colunas para mudar o status. Clique para editar.
-         Toda alteração grava quem fez.</p>
-    </div>
-    <div class="bar" id="filtros"></div>
-    <div class="colunas" id="colunas"></div>
-    <div class="hist">
-      <span class="eyebrow">últimas mudanças</span>
-      <ul id="historico"></ul>
-    </div>
-  </section>
+  <div class="esteira" id="esteira"></div>
+  <p class="esteira-leg">
+    <i style="background:var(--accent)"></i>agente de IA
+    <i style="background:var(--ok)"></i>código — a costura do padrão é matemática, não IA
+  </p>
 
-  <!-- ============ EQUIPE ============ -->
-  <section class="view" id="v-equipe" role="tabpanel" aria-labelledby="tab-equipe" hidden>
-    <div class="page-hd">
-      <h2>Equipe</h2>
-      <p>Uma trilha por pessoa. Escreva o nome de quem assume cada uma — o mapa mental e os
-         cards passam a mostrar o dono na hora. Cada trilha é dona de um diretório e de um
-         contrato, para que seis pessoas trabalhem ao mesmo tempo sem colidir.</p>
-    </div>
-    <div class="trilhas" id="trilhas"></div>
-  </section>
+  <div class="grade" id="grade"></div>
 
-</div>
-
-<!-- modal de card -->
-<div class="modal" id="modal" hidden>
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="m-titulo">
-    <div class="modal-hd"><h3 id="m-titulo">Novo card</h3>
-      <button type="button" id="m-fechar" aria-label="Fechar">✕</button></div>
-    <div class="modal-bd">
-      <label class="f"><span>título</span><input class="i" id="m-t" maxlength="140" placeholder="O que precisa ser feito"></label>
-      <label class="f"><span>detalhe</span><textarea class="i" id="m-d" maxlength="2000" placeholder="Contexto, critério de pronto, armadilhas conhecidas"></textarea></label>
-      <div class="g2">
-        <label class="f"><span>trilha</span><select class="i" id="m-tr"></select></label>
-        <label class="f"><span>status</span><select class="i" id="m-st">
-          <option value="backlog">Backlog</option><option value="fazendo">Fazendo</option>
-          <option value="revisao">Revisão</option><option value="pronto">Pronto</option></select></label>
-      </div>
-      <div class="g2">
-        <label class="f"><span>semana</span><input class="i" id="m-sem" type="number" min="1" max="12" value="1"></label>
-        <label class="f"><span>agentes (ex.: A2, A4)</span><input class="i" id="m-ag" maxlength="60" placeholder="opcional"></label>
-      </div>
-      <label class="chk"><input type="checkbox" id="m-marco"> Marco — destrava outra trilha</label>
-    </div>
-    <div class="modal-ft">
-      <button class="btn danger" type="button" id="m-apagar">Apagar</button>
-      <span class="sp"></span>
-      <button class="btn" type="button" id="m-cancelar">Cancelar</button>
-      <button class="btn primary" type="button" id="m-salvar">Salvar</button>
-    </div>
+  <div class="hist">
+    <h3>Últimas rodadas</h3>
+    <table>
+      <thead><tr><th style="width:14px"></th><th>agente</th><th>quem</th><th>tempo</th><th>tokens</th><th>quando</th></tr></thead>
+      <tbody id="hist"></tbody>
+    </table>
   </div>
 </div>
 
@@ -273,26 +198,16 @@
 (function () {
   "use strict";
 
-  var COLS = [
-    { k: "backlog", n: "Backlog" }, { k: "fazendo", n: "Fazendo" },
-    { k: "revisao", n: "Revisão" }, { k: "pronto",  n: "Pronto"  }
-  ];
-  // A esteira, na ordem. tipo: det = geometria em código, ia = agente, veto = trava dura.
   var ESTEIRA = [
-    { n: "Curador",      s: "SQL · top cases sem térmico", t: "det" },
-    { n: "Resolvedor",   s: "Factory → Site → Catalog",    t: "det" },
-    { n: "A2 Leitor",    s: "roteia a esteira",            t: "ia"  },
-    { n: "Separador",    s: "componentes conexos + A4",    t: "det" },
-    { n: "Compositor",   s: "wrapOffsets · costura 0 px",  t: "det" },
-    { n: "A5 Auditor",   s: "nota 0-10",                   t: "ia"  },
-    { n: "A6 · A7",      s: "cor do corpo · veto de marca",t: "veto"},
-    { n: "A8 · A9",      s: "nome, SKU, descrição",        t: "ia"  },
-    { n: "Aprovação",    s: "os 10% humanos",              t: "det" }
+    { n: "Curador",    s: "o que adaptar",    t: "ia"  },
+    { n: "Leitor",     s: "o que a arte é",   t: "ia"  },
+    { n: "Compositor", s: "como distribuir",  t: "ia"  },
+    { n: "Recorte",    s: "separa os motivos",t: "det" },
+    { n: "Rapport",    s: "fecha a costura",  t: "det" },
+    { n: "Auditor",    s: "dá nota",          t: "ia"  },
+    { n: "Revisor",    s: "barra marca",      t: "ia"  },
+    { n: "Batizador",  s: "nome e SKU",       t: "ia"  }
   ];
-
-  var estado = { trilhas: [], cards: [], historico: [], usuario: "", usuarioCurto: "" };
-  var filtro = "todas";
-  var editando = null;
 
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (s) {
@@ -300,359 +215,169 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   };
-  var corTrilha = function (k) {
-    return getComputedStyle(document.documentElement)
-      .getPropertyValue("--" + String(k).toLowerCase()).trim() || "#6B7B82";
-  };
 
-  var toastT = null;
-  function toast(msg, erro) {
+  var tT = null;
+  function toast(m, erro) {
     var el = $("toast");
-    el.textContent = msg;
+    el.textContent = m;
     el.className = "toast" + (erro ? " err" : "");
     el.hidden = false;
-    clearTimeout(toastT);
-    toastT = setTimeout(function () { el.hidden = true; }, erro ? 5000 : 2400);
+    clearTimeout(tT);
+    tT = setTimeout(function () { el.hidden = true; }, erro ? 6000 : 2400);
   }
 
   function api(rota, opts) {
     return fetch(rota, opts).then(function (r) {
       return r.json().then(function (j) {
-        if (!r.ok || j.error) throw new Error(j.error || ("HTTP " + r.status));
+        if (!r.ok && j.error) throw new Error(j.error);
         return j;
       });
     });
   }
 
-  // ---------- tema ----------
-  (function tema() {
-    var salvo = null;
-    try { salvo = localStorage.getItem("ft-tema"); } catch (e) {}
-    if (salvo) document.documentElement.setAttribute("data-theme", salvo);
-    else if (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) {
-      document.documentElement.setAttribute("data-theme", "dark");
-    }
-    $("btn-tema").addEventListener("click", function () {
-      var novo = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-      document.documentElement.setAttribute("data-theme", novo);
-      try { localStorage.setItem("ft-tema", novo); } catch (e) {}
-      desenhaMapa();
+  // esteira
+  (function () {
+    var h = "";
+    ESTEIRA.forEach(function (e) {
+      h += '<div class="et ' + e.t + '"><b>' + esc(e.n) + '</b><span>' + esc(e.s) + '</span></div>';
     });
+    $("esteira").innerHTML = h;
   })();
 
-  // ---------- abas ----------
-  Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (b) {
-    b.addEventListener("click", function () { mostra(b.dataset.v); });
-  });
-  function mostra(v) {
-    Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (b) {
-      b.setAttribute("aria-selected", String(b.dataset.v === v));
-    });
-    ["mapa", "board", "equipe"].forEach(function (k) { $("v-" + k).hidden = k !== v; });
-    if (v === "mapa") desenhaMapa();
-  }
-
-  // ---------- carga ----------
   function carrega() {
     return api("/api/estado").then(function (j) {
-      estado = j;
-      $("whoami").textContent = j.usuarioCurto || "";
-      desenhaMapa(); desenhaFiltros(); desenhaBoard(); desenhaEquipe(); desenhaHistorico();
-    }).catch(function (e) { toast("Não consegui carregar o quadro: " + e.message, true); });
+      $("b-token").textContent = j.temToken ? "AI Proxy ligado" : "AI Proxy sem token";
+      $("b-token").className = "badge " + (j.temToken ? "on" : "off");
+      $("b-modelo").textContent = j.modelo;
+      $("aviso").hidden = !!j.temToken;
+      desenha(j.agentes, j.temToken);
+      hist(j.execucoes);
+    }).catch(function (e) { toast("Não consegui carregar: " + e.message, true); });
   }
 
-  function porTrilha(k) {
-    return estado.cards.filter(function (c) { return c.trilha === k; });
-  }
+  function desenha(agentes, temToken) {
+    var g = $("grade");
+    g.innerHTML = "";
+    agentes.forEach(function (a) {
+      var el = document.createElement("section");
+      el.className = "ag";
+      var entradaCampo = a.visao
+        ? '<input class="url" data-ent placeholder="https://… URL da imagem" value="' + esc(a.exemplo) + '">'
+        : '<textarea class="ent" data-ent spellcheck="false">' + esc(a.exemplo) + '</textarea>';
 
-  // ================= MAPA MENTAL =================
-  function desenhaMapa() {
-    var svg = $("mapa");
-    var ink   = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim();
-    var line  = getComputedStyle(document.documentElement).getPropertyValue("--line-2").trim();
-    var surf  = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim();
-    var ok    = getComputedStyle(document.documentElement).getPropertyValue("--ok").trim();
-    var acc   = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
-    var crit  = getComputedStyle(document.documentElement).getPropertyValue("--crit").trim();
-    var corDe = { det: ok, ia: acc, veto: crit };
-
-    var W = 1180, H = 720, cx = W / 2, cy = H / 2;
-    var out = [];
-
-    // hub central
-    out.push('<rect x="' + (cx - 96) + '" y="' + (cy - 30) + '" width="192" height="60" rx="10" fill="' + ink + '"/>');
-    out.push('<text class="n-hub" x="' + cx + '" y="' + (cy - 4) + '" text-anchor="middle">Fábrica de Térmicos</text>');
-    out.push('<text class="n-sub" x="' + cx + '" y="' + (cy + 15) + '" text-anchor="middle" fill="' + surf +
-             '" opacity=".72">case best-seller → garrafa</text>');
-
-    // ---- ramo esquerdo: a esteira ----
-    out.push('<text class="n-branch" x="150" y="34" text-anchor="middle">COMO É FEITO</text>');
-    out.push('<text class="n-sub" x="150" y="50" text-anchor="middle">a esteira, 9 estágios</text>');
-    var topo = 74, passo = 68, bw = 210, bh = 46;
-    ESTEIRA.forEach(function (e, i) {
-      var y = topo + i * passo, x = 46, c = corDe[e.t];
-      out.push('<rect class="cardbg" x="' + x + '" y="' + y + '" width="' + bw + '" height="' + bh +
-               '" rx="7" fill="' + surf + '" stroke="' + line + '"/>');
-      out.push('<rect x="' + x + '" y="' + y + '" width="4" height="' + bh + '" rx="2" fill="' + c + '"/>');
-      out.push('<text class="n-txt" x="' + (x + 16) + '" y="' + (y + 20) + '">' + esc(e.n) + '</text>');
-      out.push('<text class="n-sub" x="' + (x + 16) + '" y="' + (y + 35) + '">' + esc(e.s) + '</text>');
-      // conector para o hub
-      var mx = x + bw, my = y + bh / 2;
-      out.push('<path d="M' + mx + ' ' + my + ' C ' + (mx + 60) + ' ' + my + ', ' +
-               (cx - 150) + ' ' + cy + ', ' + (cx - 96) + ' ' + cy + '" fill="none" stroke="' + line +
-               '" stroke-width="1.2" opacity=".75"/>');
-      if (i < ESTEIRA.length - 1) {
-        out.push('<path d="M' + (x + 12) + ' ' + (y + bh) + ' L' + (x + 12) + ' ' + (y + passo) +
-                 '" stroke="' + c + '" stroke-width="1.4" opacity=".45"/>');
-      }
-    });
-
-    // ---- ramo direito: as trilhas ----
-    out.push('<text class="n-branch" x="' + (W - 150) + '" y="34" text-anchor="middle">QUEM FAZ</text>');
-    out.push('<text class="n-sub" x="' + (W - 150) + '" y="50" text-anchor="middle">6 trilhas em paralelo</text>');
-    var tw = 268, th = 76, tpasso = 104, ttopo = 76;
-    (estado.trilhas || []).forEach(function (t, i) {
-      var y = ttopo + i * tpasso, x = W - 46 - tw, c = corTrilha(t.chave);
-      var cds = porTrilha(t.chave);
-      var feitos = cds.filter(function (c2) { return c2.status === "pronto"; }).length;
-      var pct = cds.length ? Math.round(feitos / cds.length * 100) : 0;
-
-      out.push('<g class="hit" tabindex="0" role="button" data-trilha="' + t.chave +
-               '" aria-label="Abrir cards da trilha ' + esc(t.chave) + '">');
-      out.push('<rect class="cardbg" x="' + x + '" y="' + y + '" width="' + tw + '" height="' + th +
-               '" rx="8" fill="' + surf + '" stroke="' + line + '"/>');
-      out.push('<rect x="' + x + '" y="' + y + '" width="4" height="' + th + '" rx="2" fill="' + c + '"/>');
-      out.push('<rect x="' + (x + 15) + '" y="' + (y + 12) + '" width="26" height="16" rx="4" fill="' + c + '"/>');
-      out.push('<text class="n-key" x="' + (x + 28) + '" y="' + (y + 24) + '" text-anchor="middle" fill="#fff">' +
-               esc(t.chave) + '</text>');
-      out.push('<text class="n-txt" x="' + (x + 49) + '" y="' + (y + 25) + '">' +
-               esc(String(t.nome).slice(0, 30)) + '</text>');
-      out.push('<text class="n-sub" x="' + (x + 15) + '" y="' + (y + 44) + '">' +
-               esc(t.dono ? t.dono : "sem dono ainda") + (t.agentes ? " · " + esc(t.agentes) : "") + '</text>');
-      // barra de progresso
-      out.push('<rect x="' + (x + 15) + '" y="' + (y + 54) + '" width="' + (tw - 76) + '" height="5" rx="2.5" fill="' + line + '"/>');
-      out.push('<rect x="' + (x + 15) + '" y="' + (y + 54) + '" width="' + Math.round((tw - 76) * pct / 100) +
-               '" height="5" rx="2.5" fill="' + ok + '"/>');
-      out.push('<text class="n-sub" x="' + (x + tw - 15) + '" y="' + (y + 60) + '" text-anchor="end">' +
-               feitos + "/" + cds.length + '</text>');
-      out.push('</g>');
-
-      var mx2 = x, my2 = y + th / 2;
-      out.push('<path d="M' + (cx + 96) + ' ' + cy + ' C ' + (cx + 150) + ' ' + cy + ', ' +
-               (mx2 - 60) + ' ' + my2 + ', ' + mx2 + ' ' + my2 + '" fill="none" stroke="' + c +
-               '" stroke-width="1.6" opacity=".55"/>');
-    });
-
-    svg.innerHTML = out.join("");
-    Array.prototype.forEach.call(svg.querySelectorAll("[data-trilha]"), function (g) {
-      var abre = function () { filtro = g.dataset.trilha; desenhaFiltros(); desenhaBoard(); mostra("board"); };
-      g.addEventListener("click", abre);
-      g.addEventListener("keydown", function (ev) {
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abre(); }
-      });
-    });
-  }
-
-  // ================= BOARD =================
-  function desenhaFiltros() {
-    var wrap = $("filtros");
-    wrap.innerHTML = "";
-    var mk = function (k, txt) {
-      var b = document.createElement("button");
-      b.type = "button"; b.className = "filtro"; b.textContent = txt;
-      b.setAttribute("aria-pressed", String(filtro === k));
-      b.addEventListener("click", function () { filtro = k; desenhaFiltros(); desenhaBoard(); });
-      wrap.appendChild(b);
-    };
-    mk("todas", "Todas (" + estado.cards.length + ")");
-    (estado.trilhas || []).forEach(function (t) {
-      mk(t.chave, t.chave + " · " + porTrilha(t.chave).length);
-    });
-    var nb = document.createElement("button");
-    nb.type = "button"; nb.className = "btn primary"; nb.textContent = "+ Novo card";
-    nb.style.marginLeft = "auto";
-    nb.addEventListener("click", function () { abreModal(null); });
-    wrap.appendChild(nb);
-  }
-
-  function desenhaBoard() {
-    var wrap = $("colunas");
-    wrap.innerHTML = "";
-    var visiveis = estado.cards.filter(function (c) {
-      return filtro === "todas" || c.trilha === filtro;
-    });
-    COLS.forEach(function (col) {
-      var lista = visiveis.filter(function (c) { return c.status === col.k; });
-      var d = document.createElement("div");
-      d.className = "col"; d.dataset.status = col.k;
-      var hd = document.createElement("div");
-      hd.className = "col-hd";
-      hd.innerHTML = '<b>' + col.n + '</b><span class="n">' + lista.length + '</span>';
-      var bd = document.createElement("div");
-      bd.className = "col-body";
-      if (!lista.length) {
-        var v = document.createElement("div");
-        v.className = "vazio"; v.textContent = "arraste um card para cá";
-        bd.appendChild(v);
-      }
-      lista.forEach(function (c) { bd.appendChild(cardEl(c)); });
-      d.appendChild(hd); d.appendChild(bd);
-
-      d.addEventListener("dragover", function (ev) { ev.preventDefault(); d.classList.add("drop"); });
-      d.addEventListener("dragleave", function () { d.classList.remove("drop"); });
-      d.addEventListener("drop", function (ev) {
-        ev.preventDefault(); d.classList.remove("drop");
-        var id = Number(ev.dataTransfer.getData("text/plain"));
-        move(id, col.k);
-      });
-      wrap.appendChild(d);
-    });
-  }
-
-  function cardEl(c) {
-    var el = document.createElement("article");
-    el.className = "card";
-    el.draggable = true;
-    el.tabIndex = 0;
-    el.style.borderLeftColor = corTrilha(c.trilha);
-    var meta = '<span class="tagk" style="background:' + corTrilha(c.trilha) + '">' + esc(c.trilha) + '</span>' +
-               '<span class="tags">S' + esc(c.semana) + '</span>' +
-               (c.agentes ? '<span class="tag-ia">' + esc(c.agentes) + '</span>' : "") +
-               (Number(c.marco) ? '<span class="tag-marco">marco</span>' : "");
-    el.innerHTML = '<div class="ttl">' + esc(c.titulo) + '</div>' +
-                   '<div class="meta">' + meta + '</div>' +
-                   (c.atualizado_por ? '<div class="por">' + esc(c.atualizado_por.split("@")[0]) + '</div>' : "");
-    el.addEventListener("click", function () { abreModal(c); });
-    el.addEventListener("keydown", function (ev) {
-      if (ev.key === "Enter") { ev.preventDefault(); abreModal(c); }
-    });
-    el.addEventListener("dragstart", function (ev) {
-      ev.dataTransfer.setData("text/plain", String(c.id));
-      ev.dataTransfer.effectAllowed = "move";
-      el.classList.add("dragging");
-    });
-    el.addEventListener("dragend", function () { el.classList.remove("dragging"); });
-    return el;
-  }
-
-  function move(id, status) {
-    var c = estado.cards.filter(function (x) { return x.id === id; })[0];
-    if (!c || c.status === status) return;
-    var antes = c.status;
-    c.status = status;            // otimista: a coluna responde na hora
-    desenhaBoard(); desenhaMapa();
-    api("/api/card/status", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: id, status: status })
-    }).then(function () { carrega(); })
-      .catch(function (e) {
-        c.status = antes; desenhaBoard(); desenhaMapa();
-        toast("Não consegui mover o card: " + e.message, true);
-      });
-  }
-
-  function desenhaHistorico() {
-    var ul = $("historico");
-    ul.innerHTML = "";
-    (estado.historico || []).forEach(function (h) {
-      var li = document.createElement("li");
-      li.innerHTML = '<span class="mono">' + esc(String(h.quando).slice(5, 16)) + '</span>' +
-                     '<b>' + esc(String(h.quem).split("@")[0]) + '</b>' +
-                     '<span>' + esc(h.acao) + " — " + esc(h.detalhe) + '</span>';
-      ul.appendChild(li);
-    });
-  }
-
-  // ================= MODAL =================
-  function abreModal(c) {
-    editando = c;
-    $("m-titulo").textContent = c ? "Editar card" : "Novo card";
-    var sel = $("m-tr");
-    sel.innerHTML = "";
-    (estado.trilhas || []).forEach(function (t) {
-      var o = document.createElement("option");
-      o.value = t.chave; o.textContent = t.chave + " · " + t.nome;
-      sel.appendChild(o);
-    });
-    $("m-t").value   = c ? c.titulo : "";
-    $("m-d").value   = c ? c.detalhe : "";
-    sel.value        = c ? c.trilha : (filtro !== "todas" ? filtro : "T1");
-    $("m-st").value  = c ? c.status : "backlog";
-    $("m-sem").value = c ? c.semana : 1;
-    $("m-ag").value  = c ? c.agentes : "";
-    $("m-marco").checked = c ? !!Number(c.marco) : false;
-    $("m-apagar").style.display = c ? "" : "none";
-    $("modal").hidden = false;
-    setTimeout(function () { $("m-t").focus(); }, 30);
-  }
-  function fechaModal() { $("modal").hidden = true; editando = null; }
-
-  $("m-fechar").addEventListener("click", fechaModal);
-  $("m-cancelar").addEventListener("click", fechaModal);
-  $("modal").addEventListener("click", function (ev) { if (ev.target === $("modal")) fechaModal(); });
-  document.addEventListener("keydown", function (ev) {
-    if (ev.key === "Escape" && !$("modal").hidden) fechaModal();
-  });
-
-  $("m-salvar").addEventListener("click", function () {
-    var corpo = {
-      id: editando ? editando.id : null,
-      trilha: $("m-tr").value, titulo: $("m-t").value, detalhe: $("m-d").value,
-      status: $("m-st").value, semana: Number($("m-sem").value) || 1,
-      agentes: $("m-ag").value, marco: $("m-marco").checked ? 1 : 0
-    };
-    if (!corpo.titulo.trim()) { toast("Escreva um título para o card.", true); return; }
-    api("/api/card", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify(corpo)
-    }).then(function () {
-      fechaModal(); toast(corpo.id ? "Card atualizado." : "Card criado."); return carrega();
-    }).catch(function (e) { toast("Não consegui salvar: " + e.message, true); });
-  });
-
-  $("m-apagar").addEventListener("click", function () {
-    if (!editando) return;
-    if (!confirm("Apagar “" + editando.titulo + "”? Isso não volta.")) return;
-    api("/api/card?id=" + editando.id, { method: "DELETE" })
-      .then(function () { fechaModal(); toast("Card apagado."); return carrega(); })
-      .catch(function (e) { toast("Não consegui apagar: " + e.message, true); });
-  });
-
-  // ================= EQUIPE =================
-  function desenhaEquipe() {
-    var wrap = $("trilhas");
-    wrap.innerHTML = "";
-    (estado.trilhas || []).forEach(function (t) {
-      var cds = porTrilha(t.chave);
-      var feitos = cds.filter(function (c) { return c.status === "pronto"; }).length;
-      var pct = cds.length ? Math.round(feitos / cds.length * 100) : 0;
-      var c = corTrilha(t.chave);
-
-      var d = document.createElement("div");
-      d.className = "tr";
-      d.innerHTML =
-        '<div class="tr-hd"><span class="k" style="background:' + c + '">' + esc(t.chave) + '</span>' +
-          '<b style="font-size:13px">' + esc(t.nome) + '</b></div>' +
-        '<div class="tr-body">' +
-          '<label class="f"><span>nome da trilha</span><input class="i" data-f="nome" maxlength="80" value="' + esc(t.nome) + '"></label>' +
-          '<label class="f"><span>quem assume</span><input class="i" data-f="dono" maxlength="60" placeholder="nome da pessoa" value="' + esc(t.dono) + '"></label>' +
-          '<label class="f"><span>escopo</span><textarea class="i" data-f="escopo" maxlength="500">' + esc(t.escopo) + '</textarea></label>' +
+      el.innerHTML =
+        '<div class="ag-hd">' +
+          '<div class="l1">' +
+            '<h2>' + esc(a.nome) + '</h2>' +
+            '<span class="tipo">' + (a.visao ? "visão" : "texto") + '</span>' +
+            '<span class="dono"><input data-dono placeholder="quem cuida" value="' + esc(a.dono) + '"></span>' +
+          '</div>' +
+          '<p>' + esc(a.oque) + '</p>' +
         '</div>' +
-        '<div class="tr-foot">' +
-          '<button class="btn" type="button" data-salvar>Salvar</button>' +
-          '<div class="prog"><i style="width:' + pct + '%"></i></div>' +
-          '<span class="pct">' + feitos + "/" + cds.length + '</span>' +
-        '</div>';
+        '<div class="ag-bd">' +
+          '<span class="rot">' + (a.visao ? "imagem de entrada" : "entrada") + '</span>' +
+          entradaCampo +
+          '<details><summary>Instrução do agente — edite e salve, sem deploy</summary>' +
+            '<textarea class="sys" data-sys spellcheck="false">' + esc(a.system) + '</textarea>' +
+            '<div class="sys-ft">' +
+              '<button class="btn" type="button" data-salvar>Salvar instrução</button>' +
+              '<button class="btn link" type="button" data-restaurar>Voltar à original</button>' +
+              '<span class="tag" data-custom ' + (a.customizado ? "" : "hidden") + '>editada</span>' +
+            '</div>' +
+          '</details>' +
+        '</div>' +
+        '<div class="acoes">' +
+          '<button class="btn primary" type="button" data-rodar ' + (temToken ? "" : "disabled") + '>Rodar agora</button>' +
+          '<span class="stat" data-stat></span>' +
+        '</div>' +
+        '<pre class="saida" data-saida hidden></pre>';
 
-      d.querySelector("[data-salvar]").addEventListener("click", function () {
-        var val = function (f) { return d.querySelector('[data-f="' + f + '"]').value; };
-        api("/api/trilha", {
+      var q = function (s) { return el.querySelector(s); };
+
+      q("[data-dono]").addEventListener("change", function (ev) {
+        api("/api/dono", {
           method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ chave: t.chave, nome: val("nome"), dono: val("dono"), escopo: val("escopo") })
-        }).then(function () { toast("Trilha " + t.chave + " atualizada."); return carrega(); })
-          .catch(function (e) { toast("Não consegui salvar: " + e.message, true); });
+          body: JSON.stringify({ agente: a.chave, dono: ev.target.value })
+        }).then(function () { toast(a.nome + " agora é de " + (ev.target.value || "ninguém") + "."); })
+          .catch(function (e) { toast("Não salvou o dono: " + e.message, true); });
       });
-      wrap.appendChild(d);
+
+      q("[data-salvar]").addEventListener("click", function () {
+        api("/api/prompt", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ agente: a.chave, system: q("[data-sys]").value })
+        }).then(function () {
+          q("[data-custom]").hidden = false;
+          toast("Instrução do " + a.nome + " salva.");
+        }).catch(function (e) { toast("Não salvou: " + e.message, true); });
+      });
+
+      q("[data-restaurar]").addEventListener("click", function () {
+        api("/api/prompt", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ agente: a.chave, system: "" })
+        }).then(function () { toast("Instrução restaurada."); return carrega(); })
+          .catch(function (e) { toast("Não deu: " + e.message, true); });
+      });
+
+      q("[data-rodar]").addEventListener("click", function () {
+        var btn = q("[data-rodar]"), out = q("[data-saida]"), st = q("[data-stat]");
+        btn.disabled = true;
+        btn.textContent = "Rodando…";
+        st.textContent = "";
+        out.hidden = false;
+        out.className = "saida";
+        out.textContent = "Chamando o AI Proxy…";
+
+        api("/api/rodar", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            agente: a.chave,
+            entrada: q("[data-ent]").value,
+            system: q("[data-sys]").value
+          })
+        }).then(function (r) {
+          if (r.ok) {
+            out.className = "saida";
+            out.textContent = JSON.stringify(r.dados, null, 2);
+            st.textContent = (r.ms / 1000).toFixed(1) + "s" + (r.tokens ? " · " + r.tokens + " tokens" : "");
+          } else {
+            out.className = "saida erro";
+            out.textContent = r.erro || "Falhou sem mensagem.";
+            st.textContent = (r.ms / 1000).toFixed(1) + "s";
+          }
+        }).catch(function (e) {
+          out.className = "saida erro";
+          out.textContent = e.message;
+        }).then(function () {
+          btn.disabled = false;
+          btn.textContent = "Rodar agora";
+          carrega();
+        });
+      });
+
+      g.appendChild(el);
+    });
+  }
+
+  function hist(execs) {
+    var tb = $("hist");
+    tb.innerHTML = "";
+    if (!execs || !execs.length) {
+      tb.innerHTML = '<tr><td colspan="6" style="color:var(--muted);padding:12px 0">' +
+                     'Nenhum agente rodou ainda.</td></tr>';
+      return;
+    }
+    execs.forEach(function (e) {
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        '<td><span class="pin ' + (Number(e.ok) ? "ok" : "no") + '"></span></td>' +
+        '<td>' + esc(e.agente) + '</td>' +
+        '<td>' + esc(String(e.quem).split("@")[0]) + '</td>' +
+        '<td class="n">' + (Number(e.ms) / 1000).toFixed(1) + 's</td>' +
+        '<td class="n">' + (e.tokens == null ? "—" : esc(e.tokens)) + '</td>' +
+        '<td class="n">' + esc(String(e.quando).slice(5, 16)) + '</td>';
+      tb.appendChild(tr);
     });
   }
 
