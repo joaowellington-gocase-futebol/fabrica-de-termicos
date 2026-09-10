@@ -102,6 +102,11 @@
   .col-hd b{font-family:"IBM Plex Sans Condensed",sans-serif;font-size:12px;letter-spacing:.05em;
     text-transform:uppercase}
   .col-hd .n{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted)}
+  .col-add{margin-left:6px;font:inherit;font-size:13px;line-height:1;border:1px solid var(--line-2);
+    background:var(--surface);color:var(--ink-2);border-radius:4px;width:20px;height:20px;
+    display:grid;place-items:center;cursor:pointer;padding:0}
+  .col-add:hover{border-color:var(--accent);color:var(--accent)}
+  .col-add:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   .col-body{padding:8px;display:flex;flex-direction:column;gap:8px;flex:1}
   .col.drop{background:var(--accent-soft);outline:2px dashed var(--accent);outline-offset:-3px}
 
@@ -121,6 +126,10 @@
   .tag-marco{font-size:9.5px;padding:1.5px 5px;border-radius:3px;background:var(--warn-soft);
     color:var(--warn);border:1px solid var(--warn);font-family:"IBM Plex Mono",monospace}
   .card .por{font-size:10.5px;color:var(--muted)}
+  .card-avancar{justify-self:start;font:inherit;font-size:11px;font-weight:500;padding:3px 8px;
+    border-radius:4px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--ink-2);cursor:pointer}
+  .card-avancar:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft)}
+  .card-avancar:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   .vazio{color:var(--muted);font-size:12px;text-align:center;padding:18px 8px}
 
   /* ---------- equipe ---------- */
@@ -277,6 +286,13 @@
     { k: "backlog", n: "Backlog" }, { k: "fazendo", n: "Fazendo" },
     { k: "revisao", n: "Revisão" }, { k: "pronto",  n: "Pronto"  }
   ];
+  var ORDEM_STATUS = COLS.map(function (c) { return c.k; });
+  var NOME_STATUS = {};
+  COLS.forEach(function (c) { NOME_STATUS[c.k] = c.n; });
+  function proximoStatus(atual) {
+    var i = ORDEM_STATUS.indexOf(atual);
+    return (i >= 0 && i < ORDEM_STATUS.length - 1) ? ORDEM_STATUS[i + 1] : null;
+  }
   // A esteira, na ordem. tipo: det = geometria em código, ia = agente, veto = trava dura.
   var ESTEIRA = [
     { n: "Curador",      s: "SQL · top cases sem térmico", t: "det" },
@@ -487,7 +503,10 @@
       d.className = "col"; d.dataset.status = col.k;
       var hd = document.createElement("div");
       hd.className = "col-hd";
-      hd.innerHTML = '<b>' + col.n + '</b><span class="n">' + lista.length + '</span>';
+      hd.innerHTML = '<b>' + col.n + '</b><span class="n">' + lista.length + '</span>' +
+        '<button type="button" class="col-add" data-add title="Novo card em ' + col.n +
+        '" aria-label="Novo card em ' + col.n + '">+</button>';
+      hd.querySelector("[data-add]").addEventListener("click", function () { abreModal(null, col.k); });
       var bd = document.createElement("div");
       bd.className = "col-body";
       if (!lista.length) {
@@ -519,13 +538,24 @@
                '<span class="tags">S' + esc(c.semana) + '</span>' +
                (c.agentes ? '<span class="tag-ia">' + esc(c.agentes) + '</span>' : "") +
                (Number(c.marco) ? '<span class="tag-marco">marco</span>' : "");
+    var prox = proximoStatus(c.status);
     el.innerHTML = '<div class="ttl">' + esc(c.titulo) + '</div>' +
                    '<div class="meta">' + meta + '</div>' +
-                   (c.atualizado_por ? '<div class="por">' + esc(c.atualizado_por.split("@")[0]) + '</div>' : "");
+                   (c.atualizado_por ? '<div class="por">' + esc(c.atualizado_por.split("@")[0]) + '</div>' : "") +
+                   (prox ? '<button type="button" class="card-avancar" data-avancar>Avançar › ' +
+                     esc(NOME_STATUS[prox]) + '</button>' : "");
     el.addEventListener("click", function () { abreModal(c); });
     el.addEventListener("keydown", function (ev) {
-      if (ev.key === "Enter") { ev.preventDefault(); abreModal(c); }
+      // só abre o modal quando o Enter é no card em si — não quando o foco está no botão "Avançar".
+      if (ev.key === "Enter" && ev.target === el) { ev.preventDefault(); abreModal(c); }
     });
+    var btnAvancar = el.querySelector("[data-avancar]");
+    if (btnAvancar) {
+      btnAvancar.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        move(c.id, proximoStatus(c.status));
+      });
+    }
     el.addEventListener("dragstart", function (ev) {
       ev.dataTransfer.setData("text/plain", String(c.id));
       ev.dataTransfer.effectAllowed = "move";
@@ -564,7 +594,7 @@
   }
 
   // ================= MODAL =================
-  function abreModal(c) {
+  function abreModal(c, statusPadrao) {
     editando = c;
     $("m-titulo").textContent = c ? "Editar card" : "Novo card";
     var sel = $("m-tr");
@@ -577,7 +607,7 @@
     $("m-t").value   = c ? c.titulo : "";
     $("m-d").value   = c ? c.detalhe : "";
     sel.value        = c ? c.trilha : (filtro !== "todas" ? filtro : "T1");
-    $("m-st").value  = c ? c.status : "backlog";
+    $("m-st").value  = c ? c.status : (statusPadrao || "backlog");
     $("m-sem").value = c ? c.semana : 1;
     $("m-ag").value  = c ? c.agentes : "";
     $("m-marco").checked = c ? !!Number(c.marco) : false;
@@ -589,6 +619,9 @@
 
   $("m-fechar").addEventListener("click", fechaModal);
   $("m-cancelar").addEventListener("click", fechaModal);
+  $("m-t").addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter") { ev.preventDefault(); $("m-salvar").click(); }
+  });
   $("modal").addEventListener("click", function (ev) { if (ev.target === $("modal")) fechaModal(); });
   document.addEventListener("keydown", function (ev) {
     if (ev.key === "Escape" && !$("modal").hidden) fechaModal();
@@ -639,18 +672,24 @@
           '<label class="f"><span>escopo</span><textarea class="i" data-f="escopo" maxlength="500">' + esc(t.escopo) + '</textarea></label>' +
         '</div>' +
         '<div class="tr-foot">' +
-          '<button class="btn" type="button" data-salvar>Salvar</button>' +
           '<div class="prog"><i style="width:' + pct + '%"></i></div>' +
           '<span class="pct">' + feitos + "/" + cds.length + '</span>' +
         '</div>';
 
-      d.querySelector("[data-salvar]").addEventListener("click", function () {
-        var val = function (f) { return d.querySelector('[data-f="' + f + '"]').value; };
-        api("/api/trilha", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ chave: t.chave, nome: val("nome"), dono: val("dono"), escopo: val("escopo") })
-        }).then(function () { toast("Trilha " + t.chave + " atualizada."); return carrega(); })
-          .catch(function (e) { toast("Não consegui salvar: " + e.message, true); });
+      // Autosave: grava ao sair do campo (change = blur + valor alterado), sem botão nem confirmação.
+      Array.prototype.forEach.call(d.querySelectorAll("[data-f]"), function (campo) {
+        campo.addEventListener("change", function () {
+          var val = function (f) { return d.querySelector('[data-f="' + f + '"]').value; };
+          var corpo = { chave: t.chave, nome: val("nome"), dono: val("dono"), escopo: val("escopo") };
+          api("/api/trilha", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify(corpo)
+          }).then(function () {
+            t.nome = corpo.nome; t.dono = corpo.dono; t.escopo = corpo.escopo;
+            toast("Trilha " + t.chave + " salva.");
+            desenhaMapa();
+          }).catch(function (e) { toast("Não consegui salvar: " + e.message, true); });
+        });
       });
       wrap.appendChild(d);
     });
