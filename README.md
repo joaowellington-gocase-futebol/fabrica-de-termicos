@@ -40,16 +40,26 @@ linha de alteração.
 ## A esteira
 
 ```
-0  Curador        SQL          top cases 90d sem <estampa>-termicos
-1  Resolvedor     cascata      Factory → Site → Catalog → PNG em alta
-2  A2 LEITOR      IA visão     JSON estruturado → roteia a esteira
-3  Separador      determ.+A4   flood-fill + componentes conexos → camadas
-4  Compositor     determ.      layoutCompute + wrapOffsets @ 2754×2340
-5  A5 AUDITOR     IA visão     costura em px + nota 0-10
-6  A6/A7          IA visão     cor do corpo + veto de marca
-7  A8/A9          IA           nome, SKU, descrição, mockup, render 3D
-8  Humano         os 10%       aprovar · ajustar · reprovar
+0  Curador        SQL*         top cases 90d sem <estampa>-termicos     worker
+1  Resolvedor     cascata      Factory → Site → Catalog → PNG em alta   worker
+2  A2 LEITOR      IA visão     JSON estruturado → roteia a esteira      worker
+3  A3 ESTRATEGISTA IA          estilo, escala, densidade alvo           worker
+4  Separador      determ.+A4   flood-fill + componentes conexos         BROWSER
+5  Compositor     determ.      layoutCompute + wrapOffsets @ 2754×2340  BROWSER
+6  A5 AUDITOR     IA visão     costura medida em px + nota 0-10         worker
+7  A6/A7          IA visão     cor do corpo + veto de marca             worker
+8  A8/A9          IA           nome, SKU, descrição, tags               worker
+9  Humano         os 10%       aprovar · ajustar · reprovar
 ```
+
+**Por que duas colunas de runtime:** o worker do GoDeploy não tem Canvas API e o
+orçamento de CPU é compartilhado — 6,4 milhões de pixels não caem ali. A
+geometria roda no browser, que é onde o `gerador-de-adaptacoes` já a executa
+hoje. Enquanto ninguém tem o motor ligado, a esteira anda até `planejada` e
+para. Detalhe em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+
+\* o proxy de dados é PostgREST, não SQL, e autentica pelo cookie do visitante —
+por isso a curadoria começa com um clique humano e não com o cron.
 
 Não é um agente conversacional grande: é uma **fila em `env.DB`** com um cron
 avançando estados. O PIAPP é assíncrono, o Worker tem teto de CPU, e é preciso
@@ -59,6 +69,7 @@ reprocessar um item sem refazer o lote.
 
 | Documento | O que traz |
 |---|---|
+| [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | **leia primeiro** — as 3 restrições da plataforma que mudam onde o código roda |
 | [docs/ORQUESTRACAO.md](docs/ORQUESTRACAO.md) | a esteira estágio a estágio, com a máquina de estados |
 | [docs/AGENTES.md](docs/AGENTES.md) | contrato de entrada/saída de cada um dos 10 agentes |
 | [docs/ORGANOGRAMA.md](docs/ORGANOGRAMA.md) | organograma das funções de IA (Mermaid) |
@@ -94,7 +105,8 @@ POST https://ai-proxy.gogroupbr.com/v1/chat/completions
 Authorization: Bearer ${AI_PROXY_TOKEN}
 ```
 
-OpenAI-compatible, com visão. Modelo padrão `gpt-5.5`.
+OpenAI-compatible, com visão. Modelo padrão `gpt-5.6-sol` (o que os apps do
+Gogroup usam hoje), configurável por `AI_MODEL`.
 Geração de **imagem** não passa por aqui — é o PIAPP (assíncrono, `job_id` +
 polling), usado só na rota generativa de reserva.
 
@@ -108,10 +120,15 @@ comparar prompt sem caçar código.
 Nunca no repositório. Só via `setAppSecret` do GoDeploy.
 
 ```
-AI_PROXY_TOKEN  AI_PROXY_URL  AI_MODEL
-PIAPP_TOKEN     REMOVEBG_KEY  METABASE_TOKEN
-PROXY_BASE_URL  (injetado pelo GoDeploy)
+AI_API_KEY      AI_BASE_URL   AI_MODEL
+PIAPP_TOKEN     REMOVEBG_KEY
+PROXY_BASE_URL  GODEPLOY_CRON_KEY   (injetados pelo GoDeploy)
 ```
+
+Atenção: são `AI_API_KEY` / `AI_BASE_URL`, **não** `AI_PROXY_TOKEN` /
+`AI_PROXY_URL` como uma versão anterior desta doc dizia. Os nomes seguem o que
+o `buscador-de-estampas` e o `trend-hunter` já usam em produção, para a mesma
+credencial servir os três apps.
 
 ## Trilhas
 

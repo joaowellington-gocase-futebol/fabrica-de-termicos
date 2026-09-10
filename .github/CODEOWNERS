@@ -1,0 +1,46 @@
+# Dono de contrato por trilha.
+#
+# O combinado do projeto é "mudou contrato? PR com revisão do dono da trilha".
+# Este arquivo é o que torna esse combinado automático em vez de lembrado: o
+# GitHub passa a exigir a revisão de quem é dono do diretório tocado.
+#
+# Seis pessoas editando o mesmo repositório sem isso significa contrato quebrado
+# em silêncio — que é exatamente o que trava um time desse tamanho.
+#
+# COMO COMPLETAR: troque os @donos-* pelos handles reais do GitHub. Enquanto o
+# handle não existir, o GitHub ignora a linha (não quebra nada, só não protege).
+
+# Contratos e núcleo — T1. Toca todas as trilhas, então revisão sempre.
+/src/core/tipos.ts        @joaowellington-gocase-futebol
+/src/core/aiproxy.ts      @joaowellington-gocase-futebol
+/src/core/fila.ts         @joaowellington-gocase-futebol
+/src/web/motor.js         @joaowellington-gocase-futebol
+
+# T2 · Dados & Curadoria — A1
+/src/core/dados.ts        @dono-t2
+/src/agentes/portfolio.ts @dono-t2
+
+# T3 · Agentes de Visão — A2, A4
+/src/agentes/leitor.ts       @dono-t3
+/src/agentes/segmentacao.ts  @dono-t3
+/src/agentes/estrategista.ts @dono-t3
+/prompts/                    @dono-t3
+/evals/                      @dono-t3
+
+# T4 · Qualidade & Compliance — A5, A6, A7
+/src/agentes/auditor.ts   @dono-t4
+/src/agentes/colorista.ts @dono-t4
+/src/agentes/revisor.ts   @dono-t4
+
+# T5 · Interface & Fila — A10
+/src/web/index.html        @dono-t5
+/src/web/app.js            @dono-t5
+/src/agentes/supervisor.ts @dono-t5
+
+# T6 · Cadastro & Integração — A8, A9
+/src/agentes/nomeador.ts @dono-t6
+/src/agentes/redator.ts  @dono-t6
+
+# Deploy e documentação de arquitetura: dono do projeto.
+/.github/            @joaowellington-gocase-futebol
+/docs/ARQUITETURA.md @joaowellington-gocase-futebol

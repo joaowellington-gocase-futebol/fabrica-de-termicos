@@ -1,0 +1,121 @@
+# Deploy da Fábrica de Térmicos no GoDeploy.
+#
+# Por que existe: com seis pessoas mexendo no mesmo app, deploy manual pela MCP
+# significa que o que está no ar é o que a última pessoa subiu da máquina dela —
+# e ninguém sabe qual commit é. Aqui `main` é a verdade: o que está em main é o
+# que está no ar.
+#
+# PARA LIGAR (uma vez, quem é dono do app):
+#   1. Admin console do GoDeploy → API Keys → criar chave do tipo `deploy`,
+#      escopo `app`, apontando para o app 9f282fbf.
+#   2. Settings → Secrets and variables → Actions → New repository secret:
+#      nome GODEPLOY_API_KEY, valor da chave (`gdk_...`).
+# Sem o secret o workflow falha com mensagem explícita em vez de subir nada.
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  # Dois merges seguidos em main não devem correr para ver quem sobe por último.
+  group: deploy-godeploy
+  cancel-in-progress: false
+
+env:
+  APP_ID: 9f282fbf
+  BASE: https://mcp.devgogroup.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Checagem de tipos
+        # Roda antes do deploy: o bundler do GoDeploy é esbuild, que APAGA os
+        # tipos sem verificá-los. Sem este passo, erro de tipo chega em produção
+        # como erro de runtime.
+        run: |
+          npm install --no-audit --no-fund
+          npx tsc --noEmit
+
+      - name: Confere o secret
+        run: |
+          if [ -z "${{ secrets.GODEPLOY_API_KEY }}" ]; then
+            echo "::error::Falta o secret GODEPLOY_API_KEY. Veja o cabeçalho deste workflow."
+            exit 1
+          fi
+
+      - name: Sobe os arquivos
+        id: upload
+        env:
+          KEY: ${{ secrets.GODEPLOY_API_KEY }}
+        run: |
+          set -euo pipefail
+          TOKEN=$(curl -sf -X POST -H "Authorization: Bearer $KEY" \
+            "$BASE/deploy/v1/upload-token" | python3 -c 'import sys,json;print(json.load(sys.stdin)["uploadToken"])')
+
+          ARGS=()
+          ARGS+=(-F "index.html=@./src/web/index.html")
+          ARGS+=(-F "app.js=@./src/web/app.js")
+          ARGS+=(-F "motor.js=@./src/web/motor.js")
+          ARGS+=(-F "package.json=@./package.json")
+          # Todo .ts sob src/ vai com o mesmo caminho relativo, então adicionar
+          # um agente novo não exige mexer neste workflow.
+          while IFS= read -r f; do
+            ARGS+=(-F "$f=@./$f")
+          done < <(find src -name '*.ts' | sort)
+
+          UPLOAD_ID=$(curl -sf -X POST -H "Authorization: Bearer $TOKEN" "${ARGS[@]}" \
+            "$BASE/upload" | python3 -c 'import sys,json;print(json.load(sys.stdin)["uploadId"])')
+          echo "upload_id=$UPLOAD_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Redeploy
+        env:
+          KEY: ${{ secrets.GODEPLOY_API_KEY }}
+          UPLOAD_ID: ${{ steps.upload.outputs.upload_id }}
+        run: |
+          set -euo pipefail
+          curl -sf -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+            -d "$(python3 -c '
+import json, os
+print(json.dumps({
+  "appId": os.environ["APP_ID"],
+  "uploadId": os.environ["UPLOAD_ID"],
+  "entrypoint": "src/server.ts",
+  "assets": ["index.html", "app.js", "motor.js"],
+  "description": "Esteira de adaptacao de estampa de capinha para garrafa termica. Deploy automatico de "
+                 + os.environ.get("GITHUB_SHA", "")[:7] + " em main.",
+}))')" \
+            "$BASE/deploy/v1/apps/update"
+
+      - name: Fuma o /api/health
+        # Um deploy que retorna 200 e um app que responde não são a mesma coisa.
+        env:
+          KEY: ${{ secrets.GODEPLOY_API_KEY }}
+        run: |
+          set -euo pipefail
+          sleep 5
+          curl -sf -H "Authorization: Bearer $KEY" \
+            "https://fabrica-de-termicos.devgogroup.com/api/health" | tee /tmp/health.json
+          python3 -c '
+import json, sys
+h = json.load(open("/tmp/health.json"))
+if not h.get("ok"):
+    sys.exit("/api/health nao respondeu ok")
+if not h.get("ai_proxy", {}).get("configurado"):
+    print("::warning::AI Proxy nao configurado neste app — os 10 agentes nao rodam.")
+if not h.get("proxy_dados"):
+    print("::warning::PROXY_BASE_URL ausente — a curadoria nao roda.")
+print("health ok")'
