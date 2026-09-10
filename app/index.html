@@ -3,152 +3,175 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agentes da Fábrica de Térmicos</title>
+<title>Estúdio da Fábrica de Térmicos</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap">
 <style>
   :root{
-    --ground:#F4F6F6; --surface:#FFF; --surface-2:#EDF1F1;
+    --ground:#F4F6F6; --surface:#FFF; --surface-2:#EDF1F1; --surface-3:#E3EAEA;
     --ink:#141B1E; --ink-2:#3D4A50; --muted:#6B7B82;
     --line:#D9E0E1; --line-2:#C3CDCF;
     --accent:#0E6E6E; --accent-soft:#DCEDEC; --accent-ink:#0A5252;
     --ok:#2E7D4F; --ok-soft:#DFEFE5;
     --warn:#9A6512; --warn-soft:#F6EBD6;
     --crit:#AE352C; --crit-soft:#F7E0DE;
-    --shadow:0 1px 2px rgba(20,27,30,.06),0 8px 22px -18px rgba(20,27,30,.3);
+    --shadow:0 1px 2px rgba(20,27,30,.06),0 10px 26px -20px rgba(20,27,30,.35);
   }
   @media (prefers-color-scheme:dark){
     :root:not([data-theme="light"]){
-      --ground:#0D1214; --surface:#141B1E; --surface-2:#1B2427;
+      --ground:#0D1214; --surface:#141B1E; --surface-2:#1B2427; --surface-3:#232E32;
       --ink:#EAEFEF; --ink-2:#B7C3C6; --muted:#849499;
       --line:#263237; --line-2:#33434A;
       --accent:#4FBDB4; --accent-soft:#12312F; --accent-ink:#7FD6CD;
       --ok:#5FBF87; --ok-soft:#122C1E;
       --warn:#D9A44E; --warn-soft:#2E2413;
       --crit:#E4796E; --crit-soft:#331A18;
-      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 26px -18px rgba(0,0,0,.85);
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 30px -20px rgba(0,0,0,.9);
     }
   }
-  :root[data-theme="dark"]{
-    --ground:#0D1214; --surface:#141B1E; --surface-2:#1B2427;
-    --ink:#EAEFEF; --ink-2:#B7C3C6; --muted:#849499;
-    --line:#263237; --line-2:#33434A;
-    --accent:#4FBDB4; --accent-soft:#12312F; --accent-ink:#7FD6CD;
-    --ok:#5FBF87; --ok-soft:#122C1E;
-    --warn:#D9A44E; --warn-soft:#2E2413;
-    --crit:#E4796E; --crit-soft:#331A18;
-    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 26px -18px rgba(0,0,0,.85);
-  }
   *{box-sizing:border-box}
-  body{
-    margin:0;background:var(--ground);color:var(--ink);font-size:14.5px;line-height:1.55;
-    font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;
-  }
+  body{margin:0;background:var(--ground);color:var(--ink);font-size:14.5px;line-height:1.55;
+    font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
   .mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
   h1,h2,h3{margin:0;text-wrap:balance}
-  .shell{max-width:1120px;margin:0 auto;padding:0 22px 80px}
+  .shell{max-width:1240px;margin:0 auto;padding:0 22px 90px}
 
-  header{background:var(--surface);border-bottom:1px solid var(--line)}
-  .hd{max-width:1120px;margin:0 auto;padding:20px 22px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
-  .hd h1{font-size:21px;font-weight:600;letter-spacing:-.015em}
-  .hd p{margin:4px 0 0;color:var(--ink-2);font-size:14px;max-width:62ch}
-  .hd .right{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-  .badge{font-family:"IBM Plex Mono",monospace;font-size:11.5px;padding:4px 10px;border-radius:999px;border:1px solid}
+  header{background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40}
+  .hd{max-width:1240px;margin:0 auto;padding:13px 22px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .hd h1{font-size:17px;font-weight:600;letter-spacing:-.01em}
+  .hd .sub{font-size:12px;color:var(--muted)}
+  .hd .right{margin-left:auto;display:flex;align-items:center;gap:9px}
+  .badge{font-family:"IBM Plex Mono",monospace;font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid}
   .badge.on{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
   .badge.off{background:var(--crit-soft);color:var(--crit);border-color:var(--crit)}
 
-  .aviso{
-    margin:18px 0 0;background:var(--crit-soft);border:1px solid var(--crit);border-radius:8px;
-    padding:13px 16px;color:var(--crit);font-size:14px;
-  }
-  .aviso b{display:block;margin-bottom:3px}
-  .aviso code{font-family:"IBM Plex Mono",monospace;font-size:12.5px;background:rgba(0,0,0,.08);
-    padding:1px 5px;border-radius:3px}
-  .aviso[hidden]{display:none}
+  /* trilha de etapas */
+  .trilha{display:flex;gap:4px;overflow-x:auto;padding:16px 0 4px}
+  .pas{flex:1;min-width:112px;text-align:left;background:var(--surface);border:1px solid var(--line);
+    border-top:3px solid var(--line-2);border-radius:6px;padding:8px 10px;cursor:pointer;font:inherit;color:inherit}
+  .pas:disabled{opacity:.45;cursor:not-allowed}
+  .pas:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .pas .n{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);letter-spacing:.08em}
+  .pas .t{display:block;font-size:12.5px;font-weight:500;margin-top:1px}
+  .pas .s{font-size:10.5px;color:var(--muted)}
+  .pas[data-st="feito"]{border-top-color:var(--ok)}
+  .pas[data-st="feito"] .s{color:var(--ok)}
+  .pas[aria-current="true"]{border-top-color:var(--accent);background:var(--accent-soft)}
+  .pas[data-op="1"] .n::after{content:" · opcional"}
 
-  /* esteira, uma linha */
-  .esteira{display:flex;gap:6px;align-items:stretch;margin:22px 0 6px;overflow-x:auto;padding-bottom:4px}
-  .et{flex:1;min-width:104px;background:var(--surface);border:1px solid var(--line);border-radius:6px;
-    padding:8px 10px;border-top:3px solid var(--line-2)}
-  .et b{display:block;font-size:12px;font-weight:500}
-  .et span{font-size:10.5px;color:var(--muted)}
-  .et.ia{border-top-color:var(--accent)}
-  .et.det{border-top-color:var(--ok)}
-  .esteira-leg{font-size:12.5px;color:var(--muted);margin:0 0 26px}
-  .esteira-leg i{display:inline-block;width:22px;height:3px;border-radius:2px;vertical-align:3px;margin:0 5px 0 12px}
-  .esteira-leg i:first-child{margin-left:0}
+  .painel{background:var(--surface);border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);
+    margin-top:16px;overflow:hidden}
+  .p-hd{padding:16px 20px;border-bottom:1px solid var(--line)}
+  .p-hd h2{font-size:18px;font-weight:600}
+  .p-hd p{margin:5px 0 0;color:var(--ink-2);font-size:13.5px;max-width:74ch}
+  .p-bd{padding:18px 20px}
+  .p-ft{padding:13px 20px;border-top:1px solid var(--line);background:var(--surface-2);
+    display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .p-ft .sp{margin-left:auto}
 
-  /* grade de agentes */
-  .grade{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-  @media (max-width:840px){.grade{grid-template-columns:1fr}}
-  .ag{background:var(--surface);border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);
-    display:flex;flex-direction:column;overflow:hidden}
-  .ag-hd{padding:14px 16px 12px;border-bottom:1px solid var(--line)}
-  .ag-hd .l1{display:flex;align-items:center;gap:9px}
-  .ag-hd h2{font-size:16px;font-weight:600}
-  .tipo{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
-    padding:2px 6px;border-radius:3px;background:var(--accent-soft);color:var(--accent-ink);border:1px solid var(--accent)}
-  .ag-hd p{margin:6px 0 0;font-size:13.5px;color:var(--ink-2)}
-  .dono{margin-left:auto;display:flex;align-items:center;gap:6px}
-  .dono input{font:inherit;font-size:12.5px;width:118px;padding:4px 8px;border-radius:5px;
-    border:1px dashed var(--line-2);background:transparent;color:var(--ink);text-align:right}
-  .dono input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-style:solid}
-  .dono input::placeholder{color:var(--muted)}
-
-  .ag-bd{padding:13px 16px;display:flex;flex-direction:column;gap:9px;flex:1}
-  .rot{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
-    color:var(--muted)}
-  textarea,input.url{font:inherit;font-size:12.5px;font-family:"IBM Plex Mono",monospace;width:100%;
-    padding:9px 10px;border-radius:6px;border:1px solid var(--line-2);background:var(--surface-2);
-    color:var(--ink);resize:vertical;line-height:1.5}
-  textarea:focus,input.url:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
-  .ent{min-height:96px}
-  .sys{min-height:150px;font-size:12px}
-
-  details{border-top:1px dashed var(--line);padding-top:9px}
-  summary{cursor:pointer;font-size:12.5px;color:var(--muted);list-style:none;display:flex;align-items:center;gap:7px}
-  summary::-webkit-details-marker{display:none}
-  summary::before{content:"▸";display:inline-block;transition:transform .15s}
-  details[open] summary::before{transform:rotate(90deg)}
-  summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
-  .sys-ft{display:flex;gap:8px;align-items:center;margin-top:8px}
-  .sys-ft .tag{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--warn);
-    background:var(--warn-soft);border:1px solid var(--warn);padding:1px 6px;border-radius:3px}
-  .sys-ft .tag[hidden]{display:none}
-
-  .acoes{display:flex;gap:8px;align-items:center;padding:11px 16px;border-top:1px solid var(--line);
-    background:var(--surface-2)}
   .btn{font:inherit;font-size:13.5px;font-weight:500;padding:8px 16px;border-radius:6px;cursor:pointer;
     border:1px solid var(--line-2);background:var(--surface);color:var(--ink)}
   .btn:hover:not(:disabled){border-color:var(--muted)}
   .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .btn:disabled{opacity:.55;cursor:default}
+  .btn:disabled{opacity:.5;cursor:default}
   .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   .btn.primary:hover:not(:disabled){background:var(--accent-ink);border-color:var(--accent-ink)}
-  .btn.link{border:0;background:none;color:var(--muted);padding:8px 4px;text-decoration:underline}
-  .stat{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted)}
+  .btn.ghost{background:transparent;border-style:dashed}
+  input.txt{font:inherit;font-size:14px;padding:9px 12px;border-radius:6px;border:1px solid var(--line-2);
+    background:var(--surface);color:var(--ink);min-width:280px}
+  input.txt:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
 
-  .saida{margin:0;padding:13px 16px;border-top:1px solid var(--line);background:var(--surface-2);
+  .rot{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.11em;text-transform:uppercase;
+    color:var(--muted);display:block;margin-bottom:7px}
+
+  /* grade de artes */
+  .artes{display:grid;grid-template-columns:repeat(auto-fill,minmax(146px,1fr));gap:11px}
+  .arte{background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:7px;cursor:pointer;
+    text-align:left;font:inherit;color:inherit;display:grid;gap:6px}
+  .arte:hover{border-color:var(--muted)}
+  .arte:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .arte[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 1px var(--accent)}
+  .arte img{width:100%;aspect-ratio:1/1.4;object-fit:contain;background:var(--surface);border-radius:4px;display:block}
+  .arte b{font-size:11.5px;font-weight:500;line-height:1.3;word-break:break-word}
+  .arte span{font-family:"IBM Plex Mono",monospace;font-size:9.5px;color:var(--muted)}
+
+  /* saída de agente */
+  .dupla{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:18px;align-items:start}
+  @media (max-width:820px){.dupla{grid-template-columns:1fr}}
+  .visual{background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:9px}
+  .visual img,.visual canvas{width:100%;display:block;border-radius:4px;background:var(--surface)}
+  pre.out{margin:0;background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:13px;
     font-family:"IBM Plex Mono",monospace;font-size:11.5px;line-height:1.55;white-space:pre-wrap;
-    word-break:break-word;max-height:340px;overflow:auto}
-  .saida[hidden]{display:none}
-  .saida.erro{background:var(--crit-soft);color:var(--crit)}
+    word-break:break-word;max-height:420px;overflow:auto}
+  pre.out.erro{background:var(--crit-soft);color:var(--crit);border-color:var(--crit)}
+  .resumo{display:grid;gap:8px;margin-bottom:12px}
+  .kv{display:flex;gap:9px;align-items:baseline;font-size:13.5px}
+  .kv b{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--muted);min-width:132px}
+  .pilulas{display:flex;gap:5px;flex-wrap:wrap}
+  .pil{font-size:11.5px;padding:2px 8px;border-radius:999px;background:var(--surface-3);border:1px solid var(--line-2)}
+  .pil.ok{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
+  .pil.no{background:var(--crit-soft);color:var(--crit);border-color:var(--crit)}
+  .pil.rm{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+  .swatches{display:flex;gap:4px;flex-wrap:wrap}
+  .sw{width:26px;height:26px;border-radius:5px;border:1px solid var(--line-2)}
 
-  .hist{margin-top:34px;border-top:1px solid var(--line);padding-top:16px}
-  .hist h3{font-size:13px;font-weight:600;margin-bottom:9px}
-  .hist table{width:100%;border-collapse:collapse;font-size:12.5px}
-  .hist th{text-align:left;font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.06em;
-    text-transform:uppercase;padding:5px 9px 5px 0;border-bottom:1px solid var(--line)}
-  .hist td{padding:6px 9px 6px 0;border-bottom:1px solid var(--line);color:var(--ink-2);vertical-align:top}
-  .hist td.n{font-family:"IBM Plex Mono",monospace;white-space:nowrap}
-  .pin{width:7px;height:7px;border-radius:50%;display:inline-block}
-  .pin.ok{background:var(--ok)} .pin.no{background:var(--crit)}
+  /* camadas recortadas */
+  .camadas{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+  .cam{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:5px;position:relative;
+    cursor:pointer}
+  .cam[aria-pressed="false"]{opacity:.32}
+  .cam canvas{width:100%;aspect-ratio:1;object-fit:contain;display:block;
+    background:repeating-conic-gradient(var(--surface-2) 0 25%, transparent 0 50%) 0 0/12px 12px}
+  .cam small{display:block;text-align:center;font-family:"IBM Plex Mono",monospace;font-size:9px;color:var(--muted)}
 
-  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);
-    color:var(--ground);padding:9px 17px;border-radius:7px;font-size:13.5px;z-index:50;box-shadow:var(--shadow)}
+  /* máscaras */
+  .mascaras{display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:10px}
+  .msk{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--line);
+    border-radius:7px;padding:11px 12px;cursor:pointer;font:inherit;color:inherit;text-align:left}
+  .msk[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+  .msk:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .msk .box{flex:none;width:38px;height:38px;display:grid;place-items:center}
+  .msk .box i{display:block;background:var(--line-2);border-radius:2px}
+  .msk[aria-pressed="true"] .box i{background:var(--accent)}
+  .msk b{display:block;font-size:13px;font-weight:500}
+  .msk span{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--muted)}
+
+  /* entrega */
+  .entrega{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:14px}
+  .ent{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .ent-hd{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:8px}
+  .ent-hd b{font-size:13px;font-weight:500}
+  .ent-hd span{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);margin-left:auto}
+  .ent .par{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+  .ent .par > div{background:var(--surface);padding:7px;display:grid;gap:5px}
+  .ent .par small{font-family:"IBM Plex Mono",monospace;font-size:9px;color:var(--muted);text-align:center}
+  .ent canvas,.ent img{width:100%;display:block;border-radius:3px;background:var(--surface-2)}
+  .ent-ft{padding:8px 12px;display:flex;gap:7px}
+  .ent-ft a{font:inherit;font-size:12px;color:var(--accent-ink);text-decoration:underline;cursor:pointer}
+
+  #tresd{width:100%;height:400px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;
+    display:block}
+  .d3-bar{display:flex;gap:8px;align-items:center;margin-top:9px;flex-wrap:wrap}
+
+  .aviso{background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn);border-radius:7px;
+    padding:11px 14px;font-size:13.5px;margin-bottom:14px}
+  .aviso.err{background:var(--crit-soft);border-color:var(--crit);color:var(--crit)}
+  .aviso[hidden]{display:none}
+  .aviso code{font-family:"IBM Plex Mono",monospace;font-size:12px;background:rgba(0,0,0,.08);padding:1px 5px;border-radius:3px}
+
+  .vazio{color:var(--muted);font-size:13.5px;padding:20px 0;text-align:center}
+  .carregando{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+  .spin{width:12px;height:12px;border:2px solid var(--line-2);border-top-color:var(--accent);border-radius:50%;
+    animation:g .8s linear infinite}
+  @keyframes g{to{transform:rotate(360deg)}}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--ground);
+    padding:9px 17px;border-radius:7px;font-size:13.5px;z-index:60;box-shadow:var(--shadow);max-width:80vw}
   .toast[hidden]{display:none}
   .toast.err{background:var(--crit);color:#fff}
-  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  details.crua{margin-top:12px}
+  details.crua summary{cursor:pointer;font-size:12.5px;color:var(--muted)}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -156,233 +179,23 @@
 <header>
   <div class="hd">
     <div>
-      <h1>Agentes da Fábrica de Térmicos</h1>
-      <p>Seis agentes de IA que levam uma estampa de capinha até a garrafa térmica.
-         Cada um tem um dono, roda sozinho e pode ser ajustado sem mexer nos outros.</p>
+      <h1>Estúdio da Fábrica de Térmicos</h1>
+      <div class="sub">da capinha ao térmico, com o padrão fechado</div>
     </div>
     <div class="right">
-      <span class="badge" id="b-token">verificando…</span>
-      <span class="mono" style="font-size:11.5px;color:var(--muted)" id="b-modelo"></span>
+      <span class="badge" id="b-token">…</span>
+      <span class="mono" style="font-size:11px;color:var(--muted)" id="b-modelo"></span>
     </div>
   </div>
 </header>
 
 <div class="shell">
-
-  <div class="aviso" id="aviso" hidden>
-    <b>Falta ligar o AI Proxy</b>
-    Nenhum agente roda até o token existir. Configure o segredo
-    <code>AI_PROXY_TOKEN</code> neste app e recarregue a página.
-  </div>
-
-  <div class="esteira" id="esteira"></div>
-  <p class="esteira-leg">
-    <i style="background:var(--accent)"></i>agente de IA
-    <i style="background:var(--ok)"></i>código — a costura do padrão é matemática, não IA
-  </p>
-
-  <div class="grade" id="grade"></div>
-
-  <div class="hist">
-    <h3>Últimas rodadas</h3>
-    <table>
-      <thead><tr><th style="width:14px"></th><th>agente</th><th>quem</th><th>tempo</th><th>tokens</th><th>quando</th></tr></thead>
-      <tbody id="hist"></tbody>
-    </table>
-  </div>
+  <nav class="trilha" id="trilha" aria-label="Etapas"></nav>
+  <main id="palco"></main>
 </div>
 
 <div class="toast" id="toast" hidden></div>
-
-<script>
-(function () {
-  "use strict";
-
-  var ESTEIRA = [
-    { n: "Curador",    s: "o que adaptar",    t: "ia"  },
-    { n: "Leitor",     s: "o que a arte é",   t: "ia"  },
-    { n: "Compositor", s: "como distribuir",  t: "ia"  },
-    { n: "Recorte",    s: "separa os motivos",t: "det" },
-    { n: "Rapport",    s: "fecha a costura",  t: "det" },
-    { n: "Auditor",    s: "dá nota",          t: "ia"  },
-    { n: "Revisor",    s: "barra marca",      t: "ia"  },
-    { n: "Batizador",  s: "nome e SKU",       t: "ia"  }
-  ];
-
-  var $ = function (id) { return document.getElementById(id); };
-  var esc = function (s) {
-    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-    });
-  };
-
-  var tT = null;
-  function toast(m, erro) {
-    var el = $("toast");
-    el.textContent = m;
-    el.className = "toast" + (erro ? " err" : "");
-    el.hidden = false;
-    clearTimeout(tT);
-    tT = setTimeout(function () { el.hidden = true; }, erro ? 6000 : 2400);
-  }
-
-  function api(rota, opts) {
-    return fetch(rota, opts).then(function (r) {
-      return r.json().then(function (j) {
-        if (!r.ok && j.error) throw new Error(j.error);
-        return j;
-      });
-    });
-  }
-
-  // esteira
-  (function () {
-    var h = "";
-    ESTEIRA.forEach(function (e) {
-      h += '<div class="et ' + e.t + '"><b>' + esc(e.n) + '</b><span>' + esc(e.s) + '</span></div>';
-    });
-    $("esteira").innerHTML = h;
-  })();
-
-  function carrega() {
-    return api("/api/estado").then(function (j) {
-      $("b-token").textContent = j.temToken ? "AI Proxy ligado" : "AI Proxy sem token";
-      $("b-token").className = "badge " + (j.temToken ? "on" : "off");
-      $("b-modelo").textContent = j.modelo;
-      $("aviso").hidden = !!j.temToken;
-      desenha(j.agentes, j.temToken);
-      hist(j.execucoes);
-    }).catch(function (e) { toast("Não consegui carregar: " + e.message, true); });
-  }
-
-  function desenha(agentes, temToken) {
-    var g = $("grade");
-    g.innerHTML = "";
-    agentes.forEach(function (a) {
-      var el = document.createElement("section");
-      el.className = "ag";
-      var entradaCampo = a.visao
-        ? '<input class="url" data-ent placeholder="https://… URL da imagem" value="' + esc(a.exemplo) + '">'
-        : '<textarea class="ent" data-ent spellcheck="false">' + esc(a.exemplo) + '</textarea>';
-
-      el.innerHTML =
-        '<div class="ag-hd">' +
-          '<div class="l1">' +
-            '<h2>' + esc(a.nome) + '</h2>' +
-            '<span class="tipo">' + (a.visao ? "visão" : "texto") + '</span>' +
-            '<span class="dono"><input data-dono placeholder="quem cuida" value="' + esc(a.dono) + '"></span>' +
-          '</div>' +
-          '<p>' + esc(a.oque) + '</p>' +
-        '</div>' +
-        '<div class="ag-bd">' +
-          '<span class="rot">' + (a.visao ? "imagem de entrada" : "entrada") + '</span>' +
-          entradaCampo +
-          '<details><summary>Instrução do agente — edite e salve, sem deploy</summary>' +
-            '<textarea class="sys" data-sys spellcheck="false">' + esc(a.system) + '</textarea>' +
-            '<div class="sys-ft">' +
-              '<button class="btn" type="button" data-salvar>Salvar instrução</button>' +
-              '<button class="btn link" type="button" data-restaurar>Voltar à original</button>' +
-              '<span class="tag" data-custom ' + (a.customizado ? "" : "hidden") + '>editada</span>' +
-            '</div>' +
-          '</details>' +
-        '</div>' +
-        '<div class="acoes">' +
-          '<button class="btn primary" type="button" data-rodar ' + (temToken ? "" : "disabled") + '>Rodar agora</button>' +
-          '<span class="stat" data-stat></span>' +
-        '</div>' +
-        '<pre class="saida" data-saida hidden></pre>';
-
-      var q = function (s) { return el.querySelector(s); };
-
-      q("[data-dono]").addEventListener("change", function (ev) {
-        api("/api/dono", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ agente: a.chave, dono: ev.target.value })
-        }).then(function () { toast(a.nome + " agora é de " + (ev.target.value || "ninguém") + "."); })
-          .catch(function (e) { toast("Não salvou o dono: " + e.message, true); });
-      });
-
-      q("[data-salvar]").addEventListener("click", function () {
-        api("/api/prompt", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ agente: a.chave, system: q("[data-sys]").value })
-        }).then(function () {
-          q("[data-custom]").hidden = false;
-          toast("Instrução do " + a.nome + " salva.");
-        }).catch(function (e) { toast("Não salvou: " + e.message, true); });
-      });
-
-      q("[data-restaurar]").addEventListener("click", function () {
-        api("/api/prompt", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ agente: a.chave, system: "" })
-        }).then(function () { toast("Instrução restaurada."); return carrega(); })
-          .catch(function (e) { toast("Não deu: " + e.message, true); });
-      });
-
-      q("[data-rodar]").addEventListener("click", function () {
-        var btn = q("[data-rodar]"), out = q("[data-saida]"), st = q("[data-stat]");
-        btn.disabled = true;
-        btn.textContent = "Rodando…";
-        st.textContent = "";
-        out.hidden = false;
-        out.className = "saida";
-        out.textContent = "Chamando o AI Proxy…";
-
-        api("/api/rodar", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            agente: a.chave,
-            entrada: q("[data-ent]").value,
-            system: q("[data-sys]").value
-          })
-        }).then(function (r) {
-          if (r.ok) {
-            out.className = "saida";
-            out.textContent = JSON.stringify(r.dados, null, 2);
-            st.textContent = (r.ms / 1000).toFixed(1) + "s" + (r.tokens ? " · " + r.tokens + " tokens" : "");
-          } else {
-            out.className = "saida erro";
-            out.textContent = r.erro || "Falhou sem mensagem.";
-            st.textContent = (r.ms / 1000).toFixed(1) + "s";
-          }
-        }).catch(function (e) {
-          out.className = "saida erro";
-          out.textContent = e.message;
-        }).then(function () {
-          btn.disabled = false;
-          btn.textContent = "Rodar agora";
-          carrega();
-        });
-      });
-
-      g.appendChild(el);
-    });
-  }
-
-  function hist(execs) {
-    var tb = $("hist");
-    tb.innerHTML = "";
-    if (!execs || !execs.length) {
-      tb.innerHTML = '<tr><td colspan="6" style="color:var(--muted);padding:12px 0">' +
-                     'Nenhum agente rodou ainda.</td></tr>';
-      return;
-    }
-    execs.forEach(function (e) {
-      var tr = document.createElement("tr");
-      tr.innerHTML =
-        '<td><span class="pin ' + (Number(e.ok) ? "ok" : "no") + '"></span></td>' +
-        '<td>' + esc(e.agente) + '</td>' +
-        '<td>' + esc(String(e.quem).split("@")[0]) + '</td>' +
-        '<td class="n">' + (Number(e.ms) / 1000).toFixed(1) + 's</td>' +
-        '<td class="n">' + (e.tokens == null ? "—" : esc(e.tokens)) + '</td>' +
-        '<td class="n">' + esc(String(e.quando).slice(5, 16)) + '</td>';
-      tb.appendChild(tr);
-    });
-  }
-
-  carrega();
-})();
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+<script src="/studio.js"></script>
 </body>
 </html>

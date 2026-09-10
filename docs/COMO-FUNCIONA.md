@@ -1,20 +1,36 @@
 # Como funciona
 
-## A esteira
-
-Uma estampa de capinha vira garrafa térmica passando por oito passos.
-Cinco são agentes de IA; três são código.
+## O estúdio, em 7 etapas
 
 ```
-Curador      IA      escolhe o que adaptar
-Leitor       IA      olha a arte e diz se dá pra separar
-Compositor   IA      decide como distribuir na garrafa
-Recorte      código  separa os motivos da arte
-Rapport      código  fecha a costura
-Auditor      IA      dá nota no resultado
-Revisor      IA      barra logo, texto e marca de terceiro
-Batizador    IA      nome, SKU e descrição
+1  Produto de origem   você escolhe a case
+2  Interpretação       IA      lê a arte e decide o caminho
+3  Variação de cor     IA      opcional — outras cartelas
+4  Set / Coleção       IA      vira conjunto: peças que conversam
+5  Separador           código  tira o fundo, recorta cada motivo
+6  Máscaras            humano  o ilustrador escolhe os produtos
+7  Entrega             código  PNGs, mockups 2D e prévia 3D
 ```
+
+Curador, Auditor, Revisor e Batizador continuam disponíveis como agentes e
+entram na esteira automática; o estúdio é o caminho manual, para o ilustrador.
+
+## Medido, não prometido
+
+O separador e o rapport rodaram na estampa real `ramos-de-lavanda`
+(851×1742) contra a máscara da Fresh 650 (2754×2340):
+
+| | resultado |
+|---|---|
+| peças recortadas | 40 |
+| salto na emenda | 1,09 |
+| salto normal dentro do desenho | 1,20 |
+| razão | **0,90** |
+
+Razão abaixo de 1 quer dizer que a emenda varia *menos* que o próprio desenho:
+não dá para achar a costura olhando. O controle negativo — mesmo layout, sem as
+cópias em ±L — deu razão **11,5**, com salto de 19,58 na emenda. É a diferença
+entre fechar por construção e torcer para fechar.
 
 ## Por que o rapport não é IA
 
@@ -91,8 +107,14 @@ como bloqueio, senão trava 100% das estampas. Ele separa as duas coisas:
 | `bloqueio_terceiro` | marca, personagem, escudo de time, obra de terceiro | para a esteira |
 | `texto_na_arte` | frase ou lettering que faz parte do desenho | para a esteira |
 
-O Leitor devolve **onde** cada elemento a remover está, e é isso que o recorte
-usa para limpar a arte antes de separar os motivos.
+O Leitor devolve **onde** cada elemento está, e o separador usa isso: peças
+recortadas naquela região já vêm desligadas, marcadas com ⚠. Na lavanda, foi
+assim que o `A.` da personalização saiu sozinho do padrão.
+
+A região é grosseira de propósito — o Leitor descreve em palavras ("canto
+superior direito"), então a sugestão pega motivos legítimos vizinhos junto. Por
+isso ela apenas **desliga**, nunca apaga: quem confirma é o ilustrador, na
+etapa 5.
 
 ## Duas coisas verificadas que poupam tempo
 

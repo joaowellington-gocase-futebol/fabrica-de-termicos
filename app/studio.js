@@ -1,0 +1,933 @@
+/* Estúdio da Fábrica de Térmicos — fluxo da capinha ao térmico entregue.
+ *
+ * O que é julgamento vai para os agentes (AI Proxy). O que é geometria fica
+ * aqui, no navegador, mexendo nos pixels de verdade:
+ *   - separar()        tira o fundo e recorta cada motivo
+ *   - comporRapport()  distribui na máscara e fecha a costura
+ *
+ * A costura fecha porque cada peça é desenhada três vezes: em x-L, x e x+L.
+ * Nada disso passa por modelo generativo — por isso a arte chega intacta.
+ */
+(function () {
+  "use strict";
+
+  var S = {
+    etapa: 0,
+    temToken: false,
+    agentes: {},
+    mascaras: [],
+    case: null,        // {sku, nome, identifier, caminho, arte}
+    imagem: null,      // HTMLImageElement da arte
+    leitura: null,     // saída do agente Leitor
+    cores: null,       // saída do agente Variação de cor
+    colecao: null,     // saída do agente Set/Coleção
+    pecas: [],         // [{canvas, x, y, w, h, area, on}]
+    escolhidas: [],    // chaves de máscara
+    saidas: []         // [{mascara, canvas, mockup}]
+  };
+
+  var ETAPAS = [
+    { k: "case",     t: "Produto de origem", s: "escolher a case" },
+    { k: "leitura",  t: "Interpretação",     s: "agente lê a arte" },
+    { k: "cor",      t: "Variação de cor",   s: "opcional", op: 1 },
+    { k: "colecao",  t: "Set / Coleção",     s: "agente monta o set" },
+    { k: "separar",  t: "Separador",         s: "tira fundo, gera camadas" },
+    { k: "mascaras", t: "Máscaras",          s: "o ilustrador decide" },
+    { k: "entrega",  t: "Entrega",           s: "PNGs, mockups e 3D" }
+  ];
+
+  var $ = function (i) { return document.getElementById(i); };
+  var el = function (tag, cls, html) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+  };
+  var esc = function (s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  };
+  var prox = function (u) { return "/api/img?url=" + encodeURIComponent(u); };
+
+  var tT = null;
+  function toast(m, erro) {
+    var t = $("toast");
+    t.textContent = m; t.className = "toast" + (erro ? " err" : ""); t.hidden = false;
+    clearTimeout(tT); tT = setTimeout(function () { t.hidden = true; }, erro ? 6500 : 2600);
+  }
+
+  function api(rota, opts) {
+    return fetch(rota, opts).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok && j.error) throw new Error(j.error);
+        return j;
+      });
+    });
+  }
+
+  function rodar(agente, entrada) {
+    var a = S.agentes[agente];
+    return api("/api/rodar", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agente: agente, entrada: entrada, system: a ? a.system : "" })
+    });
+  }
+
+  // ══════════════════════════════ geometria ══════════════════════════════
+
+  /** Carrega a imagem pelo proxy, para o canvas poder ler os pixels. */
+  function carregarImagem(url) {
+    return new Promise(function (ok, erro) {
+      var i = new Image();
+      i.crossOrigin = "anonymous";
+      i.onload = function () { ok(i); };
+      i.onerror = function () { erro(new Error("Não consegui carregar a arte.")); };
+      i.src = prox(url);
+    });
+  }
+
+  /**
+   * Tira o fundo e recorta cada motivo.
+   * 1. lê a cor do fundo nas quatro bordas
+   * 2. flood-fill a partir das bordas, com tolerância -> alpha 0
+   * 3. rotula o que sobrou em grupos conectados
+   * 4. descarta grupo pequeno demais e recorta cada um pela bbox
+   */
+  function separar(img, tol, areaMinPct) {
+    var W = img.naturalWidth, H = img.naturalHeight;
+    var cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    var cx = cv.getContext("2d", { willReadFrequently: true });
+    cx.drawImage(img, 0, 0);
+    var id = cx.getImageData(0, 0, W, H), d = id.data;
+
+    // cor de fundo: média dos cantos e do meio de cada borda
+    var amostras = [[0,0],[W-1,0],[0,H-1],[W-1,H-1],[(W/2)|0,0],[(W/2)|0,H-1],[0,(H/2)|0],[W-1,(H/2)|0]];
+    var br=0,bg=0,bb=0;
+    amostras.forEach(function (p) {
+      var o = (p[1]*W + p[0]) * 4;
+      br += d[o]; bg += d[o+1]; bb += d[o+2];
+    });
+    br /= amostras.length; bg /= amostras.length; bb /= amostras.length;
+
+    var fundo = new Uint8Array(W*H);
+    var fila = new Int32Array(W*H), ini = 0, fim = 0;
+
+    function combina(o) {
+      var dr = d[o]-br, dg = d[o+1]-bg, db = d[o+2]-bb;
+      return (dr*dr + dg*dg + db*db) <= tol*tol;
+    }
+    function semear(x, y) {
+      var p = y*W + x;
+      if (fundo[p]) return;
+      if (d[p*4+3] < 8 || combina(p*4)) { fundo[p] = 1; fila[fim++] = p; }
+    }
+    for (var x = 0; x < W; x++) { semear(x, 0); semear(x, H-1); }
+    for (var y = 0; y < H; y++) { semear(0, y); semear(W-1, y); }
+
+    while (ini < fim) {
+      var p = fila[ini++], px = p % W, py = (p / W) | 0;
+      if (px > 0)   semear(px-1, py);
+      if (px < W-1) semear(px+1, py);
+      if (py > 0)   semear(px, py-1);
+      if (py < H-1) semear(px, py+1);
+    }
+
+    // apaga o fundo
+    for (var i = 0; i < W*H; i++) if (fundo[i]) d[i*4+3] = 0;
+
+    // grupos conectados no que sobrou
+    var lab = new Int32Array(W*H), atual = 0, grupos = [];
+    for (var s = 0; s < W*H; s++) {
+      if (lab[s] || fundo[s] || d[s*4+3] < 24) continue;
+      atual++;
+      var minx = W, miny = H, maxx = 0, maxy = 0, n = 0;
+      ini = 0; fim = 0; fila[fim++] = s; lab[s] = atual;
+      while (ini < fim) {
+        var q = fila[ini++], qx = q % W, qy = (q / W) | 0;
+        n++;
+        if (qx < minx) minx = qx; if (qx > maxx) maxx = qx;
+        if (qy < miny) miny = qy; if (qy > maxy) maxy = qy;
+        for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          var nx = qx+dx, ny = qy+dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          var np = ny*W + nx;
+          if (lab[np] || fundo[np] || d[np*4+3] < 24) continue;
+          lab[np] = atual; fila[fim++] = np;
+        }
+      }
+      grupos.push({ id: atual, minx: minx, miny: miny, maxx: maxx, maxy: maxy, n: n });
+    }
+
+    // Peça que cobre quase o canvas inteiro é o fundo que escapou do flood-fill
+    // (acontece quando o fundo é textura e a tolerância ficou baixa), não um
+    // motivo. Entra no rapport como chapado e mata o padrão — fora.
+    var areaMin = W*H*(areaMinPct/100);
+    grupos = grupos.filter(function (g) {
+      if (g.n < areaMin) return false;
+      var gw = g.maxx-g.minx+1, gh = g.maxy-g.miny+1;
+      return !(gw >= W*0.85 && gh >= H*0.85);
+    }).sort(function (a, b) { return b.n - a.n; }).slice(0, 40);
+
+    // recorta cada grupo, mantendo só os pixels DELE
+    return grupos.map(function (g) {
+      var gw = g.maxx-g.minx+1, gh = g.maxy-g.miny+1;
+      var c = document.createElement("canvas");
+      c.width = gw; c.height = gh;
+      var ctx = c.getContext("2d");
+      var out = ctx.createImageData(gw, gh), od = out.data;
+      for (var yy = 0; yy < gh; yy++) for (var xx = 0; xx < gw; xx++) {
+        var src = (g.miny+yy)*W + (g.minx+xx), dst = (yy*gw + xx)*4;
+        if (lab[src] !== g.id) continue;
+        od[dst] = d[src*4]; od[dst+1] = d[src*4+1]; od[dst+2] = d[src*4+2]; od[dst+3] = d[src*4+3];
+      }
+      ctx.putImageData(out, 0, 0);
+      return {
+        canvas: c, w: gw, h: gh, area: g.n, on: true,
+        // centro de onde a peça saiu, em 0..1 — é o que permite cruzar com a
+        // posição que o Leitor descreveu ("canto superior direito").
+        cx: (g.minx + gw/2) / W, cy: (g.miny + gh/2) / H,
+      };
+    });
+  }
+
+  /**
+   * O Leitor descreve a posição em português ("canto superior direito").
+   * Aqui isso vira uma faixa de 0 a 1 para cruzar com o centro de cada peça.
+   * Serve para SUGERIR o que desligar — quem decide continua sendo o ilustrador.
+   */
+  function regiaoDoTexto(txt) {
+    var t = (txt || "").toLowerCase();
+    var x0 = 0, x1 = 1, y0 = 0, y1 = 1;
+    if (/(superior|topo|alto|cima)/.test(t))      { y0 = 0;    y1 = 0.38; }
+    if (/(inferior|baixo|rodap|fundo da)/.test(t)) { y0 = 0.62; y1 = 1;    }
+    if (/(central|meio|centro)/.test(t))          { y0 = 0.28; y1 = 0.72; }
+    if (/(direit)/.test(t))                        { x0 = 0.55; x1 = 1;    }
+    if (/(esquerd)/.test(t))                       { x0 = 0;    x1 = 0.45; }
+    if (x0 === 0 && x1 === 1 && y0 === 0 && y1 === 1) return null;  // vago demais
+    return { x0: x0, x1: x1, y0: y0, y1: y1 };
+  }
+
+  /** Desliga as peças que caem onde o Leitor apontou marca ou personalização. */
+  function sugerirRemocao(pecas, leitura) {
+    var alvos = (leitura && leitura.elementos_a_remover) || [];
+    if (!alvos.length) return 0;
+    var n = 0;
+    alvos.forEach(function (a) {
+      var r = regiaoDoTexto(a.onde);
+      if (!r) return;
+      pecas.forEach(function (p) {
+        if (p.suspeita) return;
+        if (p.cx >= r.x0 && p.cx <= r.x1 && p.cy >= r.y0 && p.cy <= r.y1) {
+          p.on = false; p.suspeita = a.tipo; n++;
+        }
+      });
+    });
+    return n;
+  }
+
+  /**
+   * Distribui as peças na máscara e fecha a costura.
+   * Cada peça entra três vezes — x-L, x e x+L — então o que sai pela direita
+   * volta pela esquerda com o mesmo recorte. É aqui que o rapport acontece.
+   */
+  function comporRapport(pecas, L, A, opts) {
+    opts = opts || {};
+    var escala = opts.escala || 1;
+    var stagger = opts.stagger !== false;
+    var fundo = opts.fundo || null;
+
+    var cv = document.createElement("canvas");
+    cv.width = L; cv.height = A;
+    var cx = cv.getContext("2d");
+    cx.imageSmoothingEnabled = true;
+    cx.imageSmoothingQuality = "high";
+    if (fundo) { cx.fillStyle = fundo; cx.fillRect(0, 0, L, A); }
+
+    if (!pecas.length) return cv;
+
+    // grade proporcional ao número de peças e ao formato da máscara
+    var n = pecas.length;
+    var cols = Math.max(2, Math.round(Math.sqrt(n * (L/A) * 1.6)));
+    var rows = Math.max(2, Math.ceil(n / cols) + 1);
+    var cw = L / cols, ch = A / rows;
+
+    var idx = 0;
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        var pe = pecas[idx % n]; idx++;
+        var off = (stagger && (r % 2)) ? cw/2 : 0;
+        var ccx = c*cw + cw/2 + off;
+        var ccy = r*ch + ch/2;
+
+        var cabe = Math.min(cw*0.82, ch*0.82) * escala;
+        var k = Math.min(cabe / pe.w, cabe / pe.h);
+        var w = pe.w * k, h = pe.h * k;
+        var x = ccx - w/2, y = ccy - h/2;
+
+        // a mesma peça, três vezes: é isso que fecha a emenda
+        cx.drawImage(pe.canvas, x - L, y, w, h);
+        cx.drawImage(pe.canvas, x,     y, w, h);
+        cx.drawImage(pe.canvas, x + L, y, w, h);
+      }
+    }
+    return cv;
+  }
+
+  /**
+   * Mede a emenda. Ao enrolar na garrafa, a última coluna encosta na primeira —
+   * elas são VIZINHAS, não iguais. Então o teste não é "são idênticas?", e sim
+   * "o salto na emenda é do mesmo tamanho do salto entre duas colunas quaisquer
+   * lá dentro?". Razão perto de 1 quer dizer que a emenda não se distingue do
+   * resto do desenho: costura invisível.
+   */
+  function medirCostura(cv) {
+    var cx = cv.getContext("2d", { willReadFrequently: true });
+    var W = cv.width, H = cv.height;
+
+    function saltoEntre(x1, x2) {
+      var a = cx.getImageData(x1, 0, 1, H).data;
+      var b = cx.getImageData(x2, 0, 1, H).data;
+      var s = 0;
+      for (var i = 0; i < a.length; i += 4) {
+        s += Math.abs(a[i]-b[i]) + Math.abs(a[i+1]-b[i+1]) +
+             Math.abs(a[i+2]-b[i+2]) + Math.abs(a[i+3]-b[i+3]);
+      }
+      return s / (H * 4);
+    }
+
+    var emenda = saltoEntre(W-1, 0);
+    var refs = [W>>3, W>>2, (W*3)>>3, W>>1, (W*5)>>3, (W*3)>>2].map(function (x) {
+      return saltoEntre(x, x+1);
+    }).sort(function (a, b) { return a-b; });
+    var interna = refs[refs.length >> 1] || 0.01;   // mediana
+
+    return { emenda: emenda, interna: interna, razao: emenda / Math.max(interna, 0.01) };
+  }
+
+  // ══════════════════════════════ navegação ══════════════════════════════
+
+  function liberada(i) {
+    if (i === 0) return true;
+    if (i === 1) return !!S.case;
+    if (i === 2 || i === 3) return !!S.leitura;
+    if (i === 4) return !!S.leitura;
+    if (i === 5) return S.pecas.length > 0;
+    if (i === 6) return S.saidas.length > 0;
+    return false;
+  }
+  function feita(i) {
+    return [!!S.case, !!S.leitura, !!S.cores, !!S.colecao,
+            S.pecas.length > 0, S.escolhidas.length > 0, S.saidas.length > 0][i];
+  }
+
+  function trilha() {
+    var t = $("trilha"); t.innerHTML = "";
+    ETAPAS.forEach(function (e, i) {
+      var b = el("button", "pas");
+      b.type = "button";
+      if (e.op) b.dataset.op = "1";
+      b.dataset.st = feita(i) ? "feito" : "";
+      b.setAttribute("aria-current", String(i === S.etapa));
+      b.disabled = !liberada(i);
+      b.innerHTML = '<span class="n">' + (i+1) + '</span>' +
+                    '<span class="t">' + esc(e.t) + '</span>' +
+                    '<span class="s">' + (feita(i) ? "pronto" : esc(e.s)) + '</span>';
+      b.addEventListener("click", function () { ir(i); });
+      t.appendChild(b);
+    });
+  }
+
+  function ir(i) { S.etapa = i; trilha(); pintar(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+
+  function painel(titulo, desc) {
+    var p = el("section", "painel");
+    p.appendChild(el("div", "p-hd", "<h2>" + esc(titulo) + "</h2><p>" + desc + "</p>"));
+    var bd = el("div", "p-bd"); p.appendChild(bd);
+    var ft = el("div", "p-ft"); p.appendChild(ft);
+    return { p: p, bd: bd, ft: ft };
+  }
+  function avancar(ft, rotulo, i, cond) {
+    var b = el("button", "btn primary", rotulo || "Avançar");
+    b.type = "button";
+    b.disabled = cond === false;
+    b.addEventListener("click", function () { ir(i); });
+    ft.appendChild(el("span", "sp"));
+    ft.appendChild(b);
+    return b;
+  }
+
+  // ══════════════════════════════ etapas ══════════════════════════════
+
+  function pintar() {
+    var palco = $("palco"); palco.innerHTML = "";
+    [etapaCase, etapaLeitura, etapaCor, etapaColecao, etapaSeparar, etapaMascaras, etapaEntrega][S.etapa](palco);
+  }
+
+  // ---------- 1. produto de origem ----------
+  function etapaCase(palco) {
+    var v = painel("Produto de origem",
+      "Comece pela capinha. Digite o identificador da estampa e escolha a arte que vai virar térmico.");
+    var busca = el("div", null,
+      '<span class="rot">identificador da estampa</span>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<input class="txt" id="q" value="ramos-de-lavanda" placeholder="ex.: ramos-de-lavanda">' +
+        '<button class="btn" type="button" id="buscar">Buscar</button>' +
+      '</div>' +
+      '<div style="margin-top:7px;font-size:12.5px;color:var(--muted)">' +
+        'Sugestões que vendem bem e ainda não existem em térmico: ' +
+        '<a href="#" data-s="aquarela">aquarela</a> · <a href="#" data-s="colagem">colagem</a> · ' +
+        '<a href="#" data-s="ramos-de-lavanda">ramos-de-lavanda</a> · <a href="#" data-s="oncinha">oncinha</a>' +
+      '</div>');
+    v.bd.appendChild(busca);
+    var res = el("div", null, '<div class="vazio">Busque uma estampa para começar.</div>');
+    res.style.marginTop = "18px";
+    v.bd.appendChild(res);
+    palco.appendChild(v.p);
+
+    var btn = avancar(v.ft, "Interpretar a arte", 1, !!S.case);
+
+    function buscar(q) {
+      res.innerHTML = '<div class="carregando"><span class="spin"></span>procurando…</div>';
+      api("/api/case?q=" + encodeURIComponent(q)).then(function (j) {
+        if (!j.itens || !j.itens.length) {
+          res.innerHTML = '<div class="vazio">' + esc(j.aviso || "Nada encontrado.") + '</div>';
+          return;
+        }
+        res.innerHTML = '<span class="rot">' + j.itens.length + ' arte(s) encontradas — escolha uma</span>';
+        var g = el("div", "artes");
+        j.itens.forEach(function (it) {
+          var b = el("button", "arte");
+          b.type = "button";
+          b.setAttribute("aria-pressed", String(!!S.case && S.case.caminho === it.caminho));
+          b.innerHTML = '<img loading="lazy" src="' + esc(prox(it.arte)) + '" alt="">' +
+                        '<b>' + esc(it.nome) + '</b><span>' + esc(it.sku) + '</span>';
+          b.addEventListener("click", function () {
+            S.case = it; S.imagem = null; S.leitura = null; S.cores = null;
+            S.colecao = null; S.pecas = []; S.saidas = [];
+            Array.prototype.forEach.call(g.children, function (o) { o.setAttribute("aria-pressed", "false"); });
+            b.setAttribute("aria-pressed", "true");
+            btn.disabled = false;
+            trilha();
+            toast("Case selecionada: " + it.nome);
+          });
+          g.appendChild(b);
+        });
+        res.appendChild(g);
+      }).catch(function (e) {
+        res.innerHTML = '<div class="aviso err">' + esc(e.message) + '</div>';
+      });
+    }
+
+    $("buscar").addEventListener("click", function () { buscar($("q").value.trim()); });
+    $("q").addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") { ev.preventDefault(); buscar($("q").value.trim()); }
+    });
+    Array.prototype.forEach.call(busca.querySelectorAll("[data-s]"), function (a) {
+      a.addEventListener("click", function (ev) {
+        ev.preventDefault(); $("q").value = a.dataset.s; buscar(a.dataset.s);
+      });
+    });
+    buscar($("q").value.trim());
+  }
+
+  // ---------- 2. interpretação ----------
+  function etapaLeitura(palco) {
+    var v = painel("Interpretação",
+      "O agente olha a arte e decide o caminho: se dá para recortar os motivos um a um, e o que " +
+      "precisa sair antes — a marca da casa e a letra de personalização vêm queimadas no preview.");
+    var d = el("div", "dupla");
+    var vis = el("div", "visual", '<img src="' + esc(prox(S.case.arte)) + '" alt="Arte da case">');
+    var lado = el("div");
+    d.appendChild(vis); d.appendChild(lado);
+    v.bd.appendChild(d);
+    palco.appendChild(v.p);
+
+    var b = el("button", "btn primary", S.leitura ? "Interpretar de novo" : "Interpretar");
+    b.type = "button";
+    v.ft.appendChild(b);
+    var prox2 = avancar(v.ft, "Avançar", 2, !!S.leitura);
+
+    function mostrar(x) {
+      lado.innerHTML = "";
+      var r = el("div", "resumo");
+      function kv(k, html) { r.appendChild(el("div", "kv", "<b>" + k + "</b><span>" + html + "</span>")); }
+      kv("tipo", esc(x.tipo || "—"));
+      kv("dá pra separar", x.separavel
+        ? '<span class="pil ok">sim — recorte direto</span>'
+        : '<span class="pil no">não — precisa recompor</span>');
+      kv("densidade", esc(x.densidade || "—"));
+      kv("estilo", esc(x.estilo || "—"));
+      if (x.motivos && x.motivos.length) {
+        kv("motivos", '<span class="pilulas">' + x.motivos.map(function (m) {
+          return '<span class="pil">' + esc(m.nome) + (m.contagem_aprox ? " ×" + esc(m.contagem_aprox) : "") + '</span>';
+        }).join("") + '</span>');
+      }
+      if (x.elementos_a_remover && x.elementos_a_remover.length) {
+        kv("sai antes do recorte", '<span class="pilulas">' + x.elementos_a_remover.map(function (m) {
+          return '<span class="pil rm">' + esc(m.tipo) + " · " + esc(m.onde) + '</span>';
+        }).join("") + '</span>');
+      }
+      kv("bloqueio", (x.bloqueio_terceiro || x.texto_na_arte)
+        ? '<span class="pil no">sim — vai para conferência humana</span>'
+        : '<span class="pil ok">livre</span>');
+      if (x.paleta && x.paleta.length) {
+        kv("paleta", '<span class="swatches">' + x.paleta.map(function (c) {
+          return '<i class="sw" style="background:' + esc(c) + '" title="' + esc(c) + '"></i>';
+        }).join("") + '</span>');
+      }
+      lado.appendChild(r);
+      var det = el("details", "crua", "<summary>resposta completa do agente</summary>");
+      det.appendChild(el("pre", "out", esc(JSON.stringify(x, null, 2))));
+      lado.appendChild(det);
+    }
+
+    if (S.leitura) mostrar(S.leitura);
+    else lado.innerHTML = '<div class="vazio">Clique em Interpretar para o agente ler esta arte.</div>';
+
+    b.addEventListener("click", function () {
+      b.disabled = true; b.textContent = "Lendo…";
+      lado.innerHTML = '<div class="carregando"><span class="spin"></span>o agente está olhando a arte…</div>';
+      rodar("leitor", S.case.arte).then(function (r) {
+        if (!r.ok) throw new Error(r.erro);
+        S.leitura = r.dados; mostrar(r.dados);
+        prox2.disabled = false; trilha();
+        toast("Interpretado em " + (r.ms/1000).toFixed(1) + "s");
+      }).catch(function (e) {
+        lado.innerHTML = '<div class="aviso err">' + esc(e.message) + '</div>';
+      }).then(function () { b.disabled = false; b.textContent = "Interpretar de novo"; });
+    });
+  }
+
+  // ---------- 3. variação de cor (opcional) ----------
+  function etapaCor(palco) {
+    var v = painel("Variação de cor <span style='font-size:12px;color:var(--muted);font-weight:400'>· opcional</span>",
+      "Mesma arte, outra cartela. Serve para render a estampa em mais de um corpo de garrafa. " +
+      "Pode pular sem prejuízo.");
+    var d = el("div", "dupla");
+    var vis = el("div", "visual", '<img src="' + esc(prox(S.case.arte)) + '" alt="Arte da case">');
+    var lado = el("div");
+    d.appendChild(vis); d.appendChild(lado);
+    v.bd.appendChild(d);
+    palco.appendChild(v.p);
+
+    var b = el("button", "btn", S.cores ? "Gerar de novo" : "Gerar variações");
+    b.type = "button"; v.ft.appendChild(b);
+    var pular = el("button", "btn ghost", "Pular esta etapa"); pular.type = "button";
+    pular.addEventListener("click", function () { ir(3); });
+    v.ft.appendChild(pular);
+    avancar(v.ft, "Avançar", 3, true);
+
+    function mostrar(x) {
+      lado.innerHTML = "";
+      (x.variacoes || []).forEach(function (o) {
+        var c = el("div", "resumo");
+        c.style.cssText = "border:1px solid var(--line);border-radius:7px;padding:11px;margin-bottom:9px";
+        c.innerHTML =
+          '<div class="kv"><b>' + esc(o.nome || "variação") + '</b>' +
+          '<span class="swatches">' + (o.paleta||[]).map(function (h) {
+            return '<i class="sw" style="background:' + esc(h) + '" title="' + esc(h) + '"></i>';
+          }).join("") + '</span></div>' +
+          '<div class="kv"><b>corpo ideal</b><span class="pil">' + esc(o.corpo_ideal || "—") + '</span></div>' +
+          '<div class="kv"><b>por quê</b><span>' + esc(o.racional || "") + '</span></div>';
+        lado.appendChild(c);
+      });
+      var det = el("details", "crua", "<summary>resposta completa do agente</summary>");
+      det.appendChild(el("pre", "out", esc(JSON.stringify(x, null, 2))));
+      lado.appendChild(det);
+    }
+
+    if (S.cores) mostrar(S.cores);
+    else lado.innerHTML = '<div class="vazio">Opcional — gere variações ou siga direto.</div>';
+
+    b.addEventListener("click", function () {
+      b.disabled = true; b.textContent = "Gerando…";
+      lado.innerHTML = '<div class="carregando"><span class="spin"></span>propondo cartelas…</div>';
+      rodar("colorista", S.case.arte).then(function (r) {
+        if (!r.ok) throw new Error(r.erro);
+        S.cores = r.dados; mostrar(r.dados); trilha();
+      }).catch(function (e) {
+        lado.innerHTML = '<div class="aviso err">' + esc(e.message) + '</div>';
+      }).then(function () { b.disabled = false; b.textContent = "Gerar de novo"; });
+    });
+  }
+
+  // ---------- 4. set / coleção ----------
+  function etapaColecao(palco) {
+    var v = painel("Set / Coleção",
+      "O agente transforma a estampa em conjunto: peças que se reconhecem como da mesma família, " +
+      "variando densidade e escala. Cada peça vira uma opção de composição adiante.");
+    var lado = el("div");
+    v.bd.appendChild(lado);
+    palco.appendChild(v.p);
+
+    var b = el("button", "btn primary", S.colecao ? "Montar de novo" : "Montar o set");
+    b.type = "button"; v.ft.appendChild(b);
+    var prox2 = avancar(v.ft, "Separar as camadas", 4, true);
+
+    function mostrar(x) {
+      lado.innerHTML = '<div class="kv"><b>set</b><span style="font-size:16px;font-weight:600">' +
+                       esc(x.nome_do_set || "—") + '</span></div>' +
+                       '<div class="kv"><b>conceito</b><span>' + esc(x.conceito || "") + '</span></div>';
+      var g = el("div", "entrega"); g.style.marginTop = "14px";
+      (x.pecas || []).forEach(function (pz) {
+        var c = el("div", "ent");
+        c.innerHTML =
+          '<div class="ent-hd"><b>' + esc(pz.nome || "peça") + '</b><span>' + esc(pz.densidade || "") + '</span></div>' +
+          '<div style="padding:11px 12px;display:grid;gap:6px;font-size:12.5px">' +
+            '<div class="pilulas">' +
+              '<span class="pil">' + esc(pz.estilo || "—") + '</span>' +
+              '<span class="pil">escala ' + esc(pz.escala || "—") + '</span>' +
+              '<span class="pil">corpo ' + esc(pz.corpo_sugerido || "—") + '</span>' +
+            '</div>' +
+            '<div style="color:var(--muted)">' + esc(pz.papel_no_set || "") + '</div>' +
+          '</div>';
+        g.appendChild(c);
+      });
+      lado.appendChild(g);
+      var det = el("details", "crua", "<summary>resposta completa do agente</summary>");
+      det.appendChild(el("pre", "out", esc(JSON.stringify(x, null, 2))));
+      lado.appendChild(det);
+    }
+
+    if (S.colecao) mostrar(S.colecao);
+    else lado.innerHTML = '<div class="vazio">Clique em Montar o set.</div>';
+
+    b.addEventListener("click", function () {
+      b.disabled = true; b.textContent = "Montando…";
+      lado.innerHTML = '<div class="carregando"><span class="spin"></span>montando o set…</div>';
+      var entrada = JSON.stringify({
+        estampa: S.case.identifier,
+        estilo: S.leitura.estilo,
+        motivos: (S.leitura.motivos || []).map(function (m) { return m.nome; }),
+        paleta: S.leitura.paleta,
+        pecas_do_set: 4
+      }, null, 2);
+      rodar("colecao", entrada).then(function (r) {
+        if (!r.ok) throw new Error(r.erro);
+        S.colecao = r.dados; mostrar(r.dados); trilha();
+      }).catch(function (e) {
+        lado.innerHTML = '<div class="aviso err">' + esc(e.message) + '</div>';
+      }).then(function () { b.disabled = false; b.textContent = "Montar de novo"; });
+    });
+  }
+
+  // ---------- 5. separador ----------
+  function etapaSeparar(palco) {
+    var v = painel("Separador",
+      "Aqui não tem IA: o fundo sai por preenchimento a partir das bordas e cada motivo é " +
+      "recortado por vizinhança de pixel. A arte continua exatamente a mesma — nada é redesenhado. " +
+      "Desmarque o que for ruído ou o que o agente pediu para remover.");
+    var ctrl = el("div", null,
+      '<div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">' +
+        '<label><span class="rot">tolerância do fundo</span>' +
+          '<input type="range" id="tol" min="20" max="220" value="110" style="width:180px"> ' +
+          '<span class="mono" id="tolv">110</span></label>' +
+        '<label><span class="rot">tamanho mínimo da peça</span>' +
+          '<input type="range" id="amin" min="1" max="40" value="6" style="width:180px"> ' +
+          '<span class="mono" id="aminv">0,06%</span></label>' +
+        '<button class="btn" type="button" id="sep">Separar</button>' +
+      '</div>');
+    v.bd.appendChild(ctrl);
+    var saida = el("div"); saida.style.marginTop = "16px";
+    v.bd.appendChild(saida);
+    palco.appendChild(v.p);
+    var prox2 = avancar(v.ft, "Escolher as máscaras", 5, S.pecas.length > 0);
+
+    $("tol").addEventListener("input", function (e) { $("tolv").textContent = e.target.value; });
+    $("amin").addEventListener("input", function (e) {
+      $("aminv").textContent = (e.target.value/100).toFixed(2).replace(".", ",") + "%";
+    });
+
+    function desenhar() {
+      saida.innerHTML = "";
+      if (!S.pecas.length) {
+        saida.innerHTML = '<div class="vazio">Nenhuma peça ainda. Clique em Separar.</div>';
+        return;
+      }
+      var ativas = S.pecas.filter(function (p) { return p.on; }).length;
+      saida.appendChild(el("span", "rot",
+        S.pecas.length + " peças recortadas · " + ativas + " em uso — clique para ligar ou desligar"));
+      var g = el("div", "camadas");
+      S.pecas.forEach(function (pz, i) {
+        var b = el("div", "cam");
+        b.setAttribute("role", "button");
+        b.setAttribute("tabindex", "0");
+        b.setAttribute("aria-pressed", String(pz.on));
+        var mini = document.createElement("canvas");
+        var k = Math.min(96/pz.w, 96/pz.h);
+        mini.width = Math.max(1, Math.round(pz.w*k));
+        mini.height = Math.max(1, Math.round(pz.h*k));
+        mini.getContext("2d").drawImage(pz.canvas, 0, 0, mini.width, mini.height);
+        b.appendChild(mini);
+        b.appendChild(el("small", null,
+          pz.suspeita ? "⚠ " + pz.suspeita.replace(/_/g, " ") : pz.w + "×" + pz.h));
+        if (pz.suspeita) b.title = "O Leitor apontou " + pz.suspeita.replace(/_/g, " ") +
+                                   " nesta região. Confira antes de ligar.";
+        function alterna() {
+          pz.on = !pz.on;
+          b.setAttribute("aria-pressed", String(pz.on));
+          saida.querySelector(".rot").textContent =
+            S.pecas.length + " peças recortadas · " +
+            S.pecas.filter(function (q) { return q.on; }).length + " em uso — clique para ligar ou desligar";
+        }
+        b.addEventListener("click", alterna);
+        b.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); alterna(); }
+        });
+        g.appendChild(b);
+      });
+      saida.appendChild(g);
+    }
+
+    desenhar();
+
+    $("sep").addEventListener("click", function () {
+      var b = $("sep");
+      b.disabled = true; b.textContent = "Separando…";
+      saida.innerHTML = '<div class="carregando"><span class="spin"></span>lendo os pixels…</div>';
+      var passo = S.imagem ? Promise.resolve(S.imagem) : carregarImagem(S.case.arte);
+      passo.then(function (img) {
+        S.imagem = img;
+        return new Promise(function (ok) {
+          setTimeout(function () {
+            S.pecas = separar(img, Number($("tol").value), Number($("amin").value)/100);
+            S.desligadas = sugerirRemocao(S.pecas, S.leitura);
+            ok();
+          }, 30);
+        });
+      }).then(function () {
+        desenhar(); trilha();
+        prox2.disabled = S.pecas.length === 0;
+        toast(S.pecas.length + " peças recortadas" +
+              (S.desligadas ? " · " + S.desligadas + " desligadas onde o Leitor apontou marca" : "") + ".");
+      }).catch(function (e) {
+        saida.innerHTML = '<div class="aviso err">' + esc(e.message) + '</div>';
+      }).then(function () { b.disabled = false; b.textContent = "Separar"; });
+    });
+  }
+
+  // ---------- 6. máscaras ----------
+  function etapaMascaras(palco) {
+    var v = painel("Máscaras dos térmicos",
+      "As medidas vêm das máscaras que já existem — as mesmas do PSD, em pixels reais de impressão. " +
+      "Você decide em quais produtos esta estampa entra.");
+    var g = el("div", "mascaras");
+    S.mascaras.forEach(function (m) {
+      var b = el("button", "msk"); b.type = "button";
+      var on = S.escolhidas.indexOf(m.chave) >= 0;
+      b.setAttribute("aria-pressed", String(on));
+      var prop = m.w / m.h;
+      var bw = prop >= 1 ? 34 : Math.round(34*prop), bh = prop >= 1 ? Math.round(34/prop) : 34;
+      b.innerHTML = '<span class="box"><i style="width:' + bw + 'px;height:' + bh + 'px"></i></span>' +
+                    '<span><b>' + esc(m.label) + '</b><span>' + m.w + " × " + m.h + ' px</span></span>';
+      b.addEventListener("click", function () {
+        var i = S.escolhidas.indexOf(m.chave);
+        if (i >= 0) S.escolhidas.splice(i, 1); else S.escolhidas.push(m.chave);
+        b.setAttribute("aria-pressed", String(i < 0));
+        ger.disabled = S.escolhidas.length === 0;
+        trilha();
+      });
+      g.appendChild(b);
+    });
+    v.bd.appendChild(g);
+    var nota = el("div", null,
+      '<div style="margin-top:14px;font-size:13px;color:var(--muted)">' +
+      'O padrão é montado com as peças que você deixou ligadas, e a costura é fechada desenhando ' +
+      'cada peça também em <span class="mono">x−L</span> e <span class="mono">x+L</span>.</div>');
+    v.bd.appendChild(nota);
+    palco.appendChild(v.p);
+
+    var ger = el("button", "btn primary", "Gerar os padrões");
+    ger.type = "button";
+    ger.disabled = S.escolhidas.length === 0;
+    v.ft.appendChild(ger);
+
+    ger.addEventListener("click", function () {
+      ger.disabled = true; ger.textContent = "Gerando…";
+      var pecas = S.pecas.filter(function (p) { return p.on; });
+      if (!pecas.length) { toast("Ligue pelo menos uma peça na etapa anterior.", true); ger.disabled = false; return; }
+      setTimeout(function () {
+        S.saidas = S.escolhidas.map(function (ch) {
+          var m = S.mascaras.filter(function (x) { return x.chave === ch; })[0];
+          var cv = comporRapport(pecas, m.w, m.h, { escala: 1, stagger: true });
+          return { mascara: m, canvas: cv, costura: medirCostura(cv) };
+        });
+        ger.disabled = false; ger.textContent = "Gerar os padrões";
+        trilha(); ir(6);
+      }, 30);
+    });
+  }
+
+  // ---------- 7. entrega ----------
+  function etapaEntrega(palco) {
+    var v = painel("Entrega",
+      "PNG de produção no tamanho exato da máscara, mockup 2D montado pelo Prisma, e a prévia em 3D " +
+      "para conferir a arte dando a volta.");
+    var g = el("div", "entrega");
+
+    S.saidas.forEach(function (s) {
+      var c = el("div", "ent");
+      var hd = el("div", "ent-hd",
+        "<b>" + esc(s.mascara.label) + "</b><span>" + s.mascara.w + "×" + s.mascara.h + "</span>");
+      c.appendChild(hd);
+
+      var par = el("div", "par");
+      var d1 = el("div", null, '<small>padrão · PNG de produção</small>');
+      var mini = document.createElement("canvas");
+      var k = 320 / s.canvas.width;
+      mini.width = 320; mini.height = Math.round(s.canvas.height * k);
+      mini.getContext("2d").drawImage(s.canvas, 0, 0, mini.width, mini.height);
+      d1.appendChild(mini);
+      var d2 = el("div", null, '<small>mockup 2D · Prisma</small>');
+      var im = document.createElement("img");
+      im.loading = "lazy"; im.alt = "Mockup " + s.mascara.label;
+      im.src = prox("https://ik.imagekit.io/gocase/govinci/" + s.mascara.sku + "/" +
+                    s.mascara.mat + "/mockup?stamp=" + S.case.caminho + "&expires=yes&tr=w-500");
+      d2.appendChild(im);
+      par.appendChild(d1); par.appendChild(d2);
+      c.appendChild(par);
+
+      var ft = el("div", "ent-ft");
+      var a = el("a", null, "baixar PNG");
+      a.href = "#";
+      a.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        s.canvas.toBlob(function (bl) {
+          var u = URL.createObjectURL(bl);
+          var l = document.createElement("a");
+          l.href = u;
+          l.download = S.case.identifier + "-termicos-" + s.mascara.chave + ".png";
+          document.body.appendChild(l); l.click(); l.remove();
+          setTimeout(function () { URL.revokeObjectURL(u); }, 4000);
+        }, "image/png");
+      });
+      ft.appendChild(a);
+      var ver = el("a", null, "ver em 3D");
+      ver.href = "#";
+      ver.addEventListener("click", function (ev) { ev.preventDefault(); montar3D(s); });
+      ft.appendChild(ver);
+      var cost = el("span", "mono");
+      var bom = s.costura.razao <= 2.5;
+      cost.style.cssText = "margin-left:auto;font-size:10.5px;color:" +
+        (bom ? "var(--ok)" : "var(--warn)");
+      cost.title = "salto na emenda " + s.costura.emenda.toFixed(1) +
+                   " · salto normal dentro do desenho " + s.costura.interna.toFixed(1);
+      cost.textContent = bom ? "emenda invisível" : "emenda visível (" + s.costura.razao.toFixed(1) + "×)";
+      ft.appendChild(cost);
+      c.appendChild(ft);
+      g.appendChild(c);
+    });
+
+    v.bd.appendChild(g);
+
+    var box3d = el("div", null,
+      '<span class="rot" style="margin-top:22px">prévia em 3D — arraste para girar e conferir a emenda</span>' +
+      '<canvas id="tresd"></canvas>' +
+      '<div class="d3-bar"><span class="mono" id="d3-nome" style="font-size:12px;color:var(--muted)"></span></div>');
+    v.bd.appendChild(box3d);
+    palco.appendChild(v.p);
+
+    var voltar = el("button", "btn", "Trocar as máscaras");
+    voltar.type = "button";
+    voltar.addEventListener("click", function () { ir(5); });
+    v.ft.appendChild(voltar);
+
+    if (S.saidas.length) setTimeout(function () { montar3D(S.saidas[0]); }, 60);
+  }
+
+  // ---------- 3D ----------
+  var cena = null;
+  function montar3D(s) {
+    var cv = $("tresd");
+    if (!cv || typeof THREE === "undefined") return;
+    $("d3-nome").textContent = s.mascara.label + " · " + s.mascara.w + "×" + s.mascara.h;
+
+    if (!cena) {
+      var ren = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+      ren.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      var sc = new THREE.Scene();
+      var cam = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+      cam.position.set(0, 0.3, 7.4);
+      sc.add(new THREE.AmbientLight(0xffffff, 0.85));
+      var l1 = new THREE.DirectionalLight(0xffffff, 0.75); l1.position.set(4, 6, 7); sc.add(l1);
+      var l2 = new THREE.DirectionalLight(0xffffff, 0.35); l2.position.set(-5, 2, -4); sc.add(l2);
+
+      var grupo = new THREE.Group();
+      // corpo onde a arte é aplicada
+      var corpo = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.05, 1.05, 3.5, 96, 1, true),
+        new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide }));
+      corpo.position.y = -0.15;
+      grupo.add(corpo);
+      // base, ombro e tampa, só para dar leitura de garrafa
+      var aco = new THREE.MeshStandardMaterial({ color: 0xe9edee, roughness: 0.4, metalness: 0.3 });
+      var base = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.0, 0.12, 96), aco);
+      base.position.y = -1.96; grupo.add(base);
+      var ombro = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 1.05, 0.6, 96), aco);
+      ombro.position.y = 1.9; grupo.add(ombro);
+      var gargalo = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.36, 64), aco);
+      gargalo.position.y = 2.38; grupo.add(gargalo);
+      var tampa = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.56, 0.3, 64),
+        new THREE.MeshStandardMaterial({ color: 0xf4f5f5, roughness: 0.6 }));
+      tampa.position.y = 2.66; grupo.add(tampa);
+      sc.add(grupo);
+
+      cena = { ren: ren, sc: sc, cam: cam, grupo: grupo, corpo: corpo, girando: true, vel: 0.0055 };
+
+      var arrastando = false, ultimo = 0;
+      cv.style.cursor = "grab";
+      cv.addEventListener("pointerdown", function (e) {
+        arrastando = true; ultimo = e.clientX; cena.girando = false;
+        cv.style.cursor = "grabbing"; cv.setPointerCapture(e.pointerId);
+      });
+      cv.addEventListener("pointermove", function (e) {
+        if (!arrastando) return;
+        cena.grupo.rotation.y += (e.clientX - ultimo) * 0.008;
+        ultimo = e.clientX;
+      });
+      ["pointerup", "pointercancel"].forEach(function (ev) {
+        cv.addEventListener(ev, function () { arrastando = false; cv.style.cursor = "grab"; });
+      });
+
+      function laco() {
+        requestAnimationFrame(laco);
+        var l = cv.clientWidth, a = cv.clientHeight;
+        if (l && a && (cv.width !== l || cv.height !== a)) {
+          cena.ren.setSize(l, a, false);
+          cena.cam.aspect = l/a; cena.cam.updateProjectionMatrix();
+        }
+        if (cena.girando) cena.grupo.rotation.y += cena.vel;
+        cena.ren.render(cena.sc, cena.cam);
+      }
+      laco();
+    }
+
+    var tex = new THREE.CanvasTexture(s.canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    if ("colorSpace" in tex) tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    tex.needsUpdate = true;
+    if (cena.corpo.material.map) cena.corpo.material.map.dispose();
+    cena.corpo.material.map = tex;
+    cena.corpo.material.color = new THREE.Color(0xffffff);
+    cena.corpo.material.needsUpdate = true;
+  }
+
+  // ══════════════════════════════ início ══════════════════════════════
+
+  api("/api/estado").then(function (j) {
+    S.temToken = j.temToken;
+    S.mascaras = j.mascaras || [];
+    (j.agentes || []).forEach(function (a) { S.agentes[a.chave] = a; });
+    $("b-token").textContent = j.temToken ? "AI Proxy ligado" : "AI Proxy sem token";
+    $("b-token").className = "badge " + (j.temToken ? "on" : "off");
+    $("b-modelo").textContent = j.modelo || "";
+    trilha(); pintar();
+  }).catch(function (e) {
+    $("palco").innerHTML = '<div class="aviso err">Não consegui iniciar: ' + esc(e.message) + '</div>';
+  });
+})();

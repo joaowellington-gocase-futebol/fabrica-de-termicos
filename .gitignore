@@ -7,3 +7,4 @@ dist/
 .wrangler/
 tmp/
 .claude/settings.local.json
+.teste-tmp/

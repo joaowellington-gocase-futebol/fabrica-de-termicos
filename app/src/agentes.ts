@@ -94,6 +94,59 @@ export const AGENTES: Agente[] = [
 
   // ─────────────────────────────────────────────────────────────
   {
+    chave: 'colorista',
+    nome: 'Variação de cor',
+    dono: '',
+    oque: 'Propõe outras cartelas para a mesma arte, sem mudar o desenho. Etapa opcional.',
+    visao: true,
+    temperatura: 0.5,
+    exemplo: 'https://custom-case-images.s3.amazonaws.com/prisma-render/prod-v2/previews/ramos-de-lavanda/100688/standard-iphone11/17773150714228854032720886829191875.png',
+    system:
+      'Você recebe uma estampa e propõe variações de COR — o desenho continua o mesmo, muda a ' +
+      'cartela. O destino é uma garrafa térmica de corpo branco, preto ou azul claro. ' +
+      'Para cada variação diga em qual corpo ela funciona: arte muito clara some no branco, ' +
+      'arte muito escura fecha demais no preto. ' +
+      'Proponha 3 variações com propósito diferente entre si — por exemplo uma mais sóbria para ' +
+      'público masculino, uma mais quente para o verão, uma monocromática. Não repita a original. ' +
+      'Descreva a troca em termos do que a pessoa vê ("lilás vira terracota"), não em teoria de cor. ' +
+      'Formato: {"original":{"paleta":["#RRGGBB"],"leitura":"..."},' +
+      '"variacoes":[{"nome","paleta":["#RRGGBB"],"de_para":[{"era":"#RRGGBB","vira":"#RRGGBB"}],' +
+      '"corpo_ideal":"branco|preto|azul","publico","racional"}],"confianca":0-1}' + JSON_ONLY,
+    user: () => 'Proponha variações de cor para esta estampa.',
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  {
+    chave: 'colecao',
+    nome: 'Set / Coleção',
+    dono: '',
+    oque: 'Transforma uma estampa em conjunto: peças que conversam entre si na prateleira.',
+    visao: false,
+    temperatura: 0.6,
+    exemplo: JSON.stringify({
+      estampa: 'ramos-de-lavanda',
+      estilo: 'ilustração botânica em aquarela sobre papel texturizado',
+      motivos: ['ramos de lavanda roxa', 'folhagens verdes alongadas', 'flores lilás'],
+      paleta: ['#F4D9AE', '#56308F', '#8E63C5', '#45633B'],
+      pecas_do_set: 4,
+    }, null, 2),
+    system:
+      'Você monta um SET a partir de uma estampa: peças diferentes que se reconhecem como da ' +
+      'mesma família quando ficam lado a lado na prateleira ou numa foto. ' +
+      'Cada peça usa os MESMOS motivos e a MESMA paleta — o que muda é a densidade, a escala e ' +
+      'quais motivos aparecem. A regra é ter contraste entre elas: se todas tiverem a mesma ' +
+      'densidade, o set vira repetição, não coleção. ' +
+      'Distribua entre: uma peça cheia (motivos densos), uma média, uma respirada (poucos motivos ' +
+      'grandes) e, quando fizer sentido, uma quase lisa que só cita a paleta. ' +
+      'Nomeie o set com 1 a 3 palavras. Cada peça também ganha nome curto. ' +
+      'Formato: {"nome_do_set","conceito","pecas":[{"nome","motivos_usados":[],"densidade":"baixa|media|alta",' +
+      '"escala":"pequena|media|grande","estilo":"stickers|linear|distribuido|localizada",' +
+      '"corpo_sugerido":"branco|preto|azul","papel_no_set"}],"confianca":0-1}' + JSON_ONLY,
+    user: (e) => 'Monte o set a partir desta estampa:\n' + e,
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  {
     chave: 'compositor',
     nome: 'Compositor',
     dono: '',
