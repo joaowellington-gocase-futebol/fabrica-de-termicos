@@ -87,14 +87,20 @@ A priorização precisa ser reconstruída sobre `product_estampa_daily`.
 - `svg-to-ttf` (8132aa43): proxy PIAPP + **remove.bg** já integrado.
 - `central-estampas` (aee3ede7): histórico de gerações por IA + aprovação.
 - PIAPP MCP: seedream-v4/v5, flux-2-max-edit, gpt-image-2.5, gemini-3-pro-image.
+  Edição com até 14-16 imagens de referência.
 
 ## 8. Benchmark - Captura de Mockups — trazido para o repo em 2026-09-10
 App `benchmark-mockups` (0684e674), dona ravenna.alencar. Código copiado para
 [`integracoes/benchmark-mockups/`](../integracoes/benchmark-mockups/README.md)
 (referência congelada, não deployado daqui). Faz scrape de coleções
 concorrentes + `generatePrompt` (AI Proxy) + `generateImage` (PIAPP, `job_id`
-+ polling) — mesmo padrão descrito em `docs/AGENTES.md` para a rota
-generativa. Reaproveitável: `PROMPT_SYSTEM` como base para o A2, e o ciclo
-PIAPP como referência de implementação para a rota B do Separador. Chama o AI
-Proxy com `fetch` direto — adaptar para `chamarAgente()` antes de reusar.
-  Edição com até 14-16 imagens de referência.
++ polling) — mesmo padrão descrito em `docs/COMO-FUNCIONA.md` § Rota
+generativa.
+
+**Reaproveitamento implementado em 2026-09-10** (`app/src/rotab.ts` +
+rotas `/api/rotab/*` em `app/src/server.ts` + `etapaSepararGenerativa()` em
+`app/studio.js`): o `PROMPT_SYSTEM` virou a base do prompt de rapport da
+etapa 5b, e o ciclo `generateImage`/poll do PIAPP virou `dispararGeracao()` +
+`consultarJob()` — agora chamando `chamarAgente()` (não mais `fetch` direto)
+e com a mesma persistência em chunks (`rotab_chunks`) porque a `output_url`
+expira. Precisa do segredo `PIAPP_TOKEN` além do `AI_PROXY_TOKEN`.

@@ -11,9 +11,10 @@
 
 import { AGENTES, acharAgente } from './agentes';
 import { MASCARAS, mockupUrl } from './produtos';
-import { chamarAgente, type Env as AiEnv } from './aiproxy';
+import { chamarAgente } from './aiproxy';
+import { gerarPromptRapport, dispararGeracao, consultarJob, proporcaoDe, type Env as RotaBEnv } from './rotab';
 
-interface Env extends AiEnv { PROXY_BASE_URL?: string }
+interface Env extends RotaBEnv { PROXY_BASE_URL?: string }
 
 const IMG_HOSTS = [
   'custom-case-images.s3.amazonaws.com',
@@ -59,6 +60,21 @@ async function schema(env: Env): Promise<void> {
        entrada TEXT NOT NULL DEFAULT '', saida TEXT NOT NULL DEFAULT '',
        ok INTEGER NOT NULL DEFAULT 1, ms INTEGER NOT NULL DEFAULT 0, tokens INTEGER,
        quem TEXT NOT NULL DEFAULT '', quando TEXT NOT NULL DEFAULT (datetime('now'))
+     )`, []);
+  // Rota B do Separador (fundo contínuo -> PIAPP). Uma geração por (caminho,
+  // máscara); os bytes ficam em rotab_chunks porque a output_url do PIAPP
+  // expira em ~1h — nunca servimos ela direto pro cliente.
+  await env.DB.exec(
+    `CREATE TABLE IF NOT EXISTS rotab_geracoes (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       caminho TEXT NOT NULL, mascara TEXT NOT NULL, prompt TEXT NOT NULL DEFAULT '',
+       job_id TEXT, status TEXT NOT NULL DEFAULT 'queued', mime TEXT, erro TEXT,
+       quando TEXT NOT NULL DEFAULT (datetime('now')),
+       UNIQUE(caminho, mascara)
+     )`, []);
+  await env.DB.exec(
+    `CREATE TABLE IF NOT EXISTS rotab_chunks (
+       geracao_id INTEGER NOT NULL, idx INTEGER NOT NULL, b64 TEXT NOT NULL
      )`, []);
   pronto = true;
 }
@@ -220,6 +236,108 @@ export default {
            ON CONFLICT(chave) DO UPDATE SET prompt = excluded.prompt`,
           [ag.chave, String(b.system || '').trim().slice(0, 8000)]);
         return json({ ok: true });
+      }
+
+      // ── Rota B do Separador: fundo contínuo -> PIAPP ──────────────────
+      // (docs/COMO-FUNCIONA.md § Rota generativa; padrão trazido do app
+      // benchmark-mockups — ver docs/MAPA-ATIVOS.md § 8)
+
+      if (p === '/api/rotab/prompt' && request.method === 'POST') {
+        const b = (await request.json()) as { arte?: string };
+        const arte = String(b.arte || '');
+        if (!arte) return json({ error: 'Faltou a arte de origem.' }, 400);
+        const r = await gerarPromptRapport(env, arte);
+        if (!r.ok) return json({ error: r.erro }, 502);
+        return json({ prompt: r.prompt });
+      }
+
+      if (p === '/api/rotab/gerar' && request.method === 'POST') {
+        const b = (await request.json()) as { caminho?: string; mascara?: string; prompt?: string };
+        const caminho = String(b.caminho || '');
+        const chave = String(b.mascara || '');
+        const prompt = String(b.prompt || '').trim();
+        const m = MASCARAS.find((x) => x.chave === chave);
+        if (!caminho || !m) return json({ error: 'Faltou a arte de origem ou a máscara não existe.' }, 400);
+        if (!prompt) return json({ error: 'Gere o prompt na etapa anterior antes de gerar a imagem.' }, 400);
+
+        const disparo = await dispararGeracao(env, prompt, proporcaoDe(m.w, m.h));
+        if (!disparo.ok) return json({ error: disparo.erro }, 502);
+
+        await env.DB.exec(
+          `INSERT INTO rotab_geracoes (caminho, mascara, prompt, job_id, status)
+           VALUES (?, ?, ?, ?, 'queued')
+           ON CONFLICT(caminho, mascara) DO UPDATE SET
+             prompt = excluded.prompt, job_id = excluded.job_id, status = 'queued', erro = NULL`,
+          [caminho, chave, prompt, disparo.jobId ?? null]);
+        const row = await env.DB.query(
+          'SELECT id FROM rotab_geracoes WHERE caminho = ? AND mascara = ?', [caminho, chave]);
+        return json({ id: row.rows[0]?.id, status: 'queued' });
+      }
+
+      if (p === '/api/rotab/status') {
+        const id = Number(url.searchParams.get('id') || 0);
+        if (!id) return json({ error: 'Faltou o id.' }, 400);
+        const row = await env.DB.query('SELECT * FROM rotab_geracoes WHERE id = ?', [id]);
+        const g = row.rows[0] as Record<string, unknown> | undefined;
+        if (!g) return json({ error: 'Geração não encontrada.' }, 404);
+
+        if (g.status === 'completed') return json({ status: 'completed', url: '/api/rotab/imagem?id=' + id });
+        if (g.status === 'failed') return json({ status: 'failed', erro: g.erro });
+
+        const s = await consultarJob(env, String(g.job_id || ''));
+        if (!s.ok) return json({ status: 'processing', aviso: s.erro });
+        if (s.status === 'queued' || s.status === 'processing') return json({ status: s.status });
+
+        if (s.status === 'failed' || !s.outputUrl) {
+          const erro = s.erro || 'O PIAPP marcou concluído sem imagem.';
+          await env.DB.exec(`UPDATE rotab_geracoes SET status = 'failed', erro = ? WHERE id = ?`, [erro, id]);
+          return json({ status: 'failed', erro });
+        }
+
+        // completed: baixa os bytes agora — a output_url do PIAPP é assinada e expira.
+        try {
+          const img = await fetch(s.outputUrl);
+          if (!img.ok) throw new Error('a imagem respondeu ' + img.status);
+          const mime = img.headers.get('content-type') || 'image/png';
+          const bytes = new Uint8Array(await img.arrayBuffer());
+          let bin = '';
+          for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+          const b64 = btoa(bin);
+          const CHUNK = 800_000; // abaixo do limite por linha do D1/SQLite
+          await env.DB.exec('DELETE FROM rotab_chunks WHERE geracao_id = ?', [id]);
+          for (let off = 0, idx = 0; off < b64.length; off += CHUNK, idx++) {
+            await env.DB.exec('INSERT INTO rotab_chunks (geracao_id, idx, b64) VALUES (?, ?, ?)',
+              [id, idx, b64.slice(off, off + CHUNK)]);
+          }
+          await env.DB.exec(`UPDATE rotab_geracoes SET status = 'completed', mime = ?, erro = NULL WHERE id = ?`,
+            [mime, id]);
+          return json({ status: 'completed', url: '/api/rotab/imagem?id=' + id });
+        } catch (e) {
+          const msg = (e as Error)?.message || String(e);
+          await env.DB.exec(`UPDATE rotab_geracoes SET status = 'failed', erro = ? WHERE id = ?`, [msg, id]);
+          return json({ status: 'failed', erro: msg }, 502);
+        }
+      }
+
+      if (p === '/api/rotab/imagem') {
+        const id = Number(url.searchParams.get('id') || 0);
+        if (!id) return new Response('faltou o id', { status: 400 });
+        const ger = await env.DB.query('SELECT mime, status FROM rotab_geracoes WHERE id = ?', [id]);
+        const g = ger.rows[0] as { mime?: string; status?: string } | undefined;
+        if (!g || g.status !== 'completed') return new Response('imagem ainda não está pronta', { status: 404 });
+        const chunks = await env.DB.query(
+          'SELECT b64 FROM rotab_chunks WHERE geracao_id = ? ORDER BY idx', [id]);
+        if (!chunks.rows.length) return new Response('imagem sem bytes — gere de novo', { status: 404 });
+        const b64 = chunks.rows.map((r) => String(r.b64)).join('');
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new Response(bytes, {
+          headers: {
+            'content-type': g.mime || 'image/png',
+            'cache-control': 'public, max-age=604800, immutable',
+          },
+        });
       }
 
       return json({ error: 'Rota não encontrada.' }, 404);

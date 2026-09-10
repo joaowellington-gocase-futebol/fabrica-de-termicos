@@ -116,6 +116,46 @@ superior direito"), então a sugestão pega motivos legítimos vizinhos junto. P
 isso ela apenas **desliga**, nunca apaga: quem confirma é o ilustrador, na
 etapa 5.
 
+## Rota generativa (PIAPP)
+
+Padrão genérico documentado em [`docs/PIPELINE-VISAO-PROMPT-IMAGEM.md`](PIPELINE-VISAO-PROMPT-IMAGEM.md)
+(reusável em qualquer app do Gogroup, não só aqui). Versão concreta desta base:
+
+Quando o Leitor marca `separavel=false` — a arte é um fundo contínuo, sem
+motivo isolável — não há o que recortar. A etapa 5 do Estúdio muda de rota:
+em vez de `separar()` + `comporRapport()`, dois agentes de IA em cadeia
+(`app/src/rotab.ts`) pedem um padrão novo ao PIAPP. É o mesmo padrão do app
+`benchmark-mockups` (Giovanna/Ravenna, trazido em
+[`integracoes/benchmark-mockups/`](../integracoes/benchmark-mockups/README.md)),
+adaptado para reusar `chamarAgente()` em vez de `fetch` direto:
+
+1. **Visão → prompt** (`gerarPromptRapport`): o AI Proxy olha a arte da case e
+   descreve SÓ o padrão — ignora case, hardware, mockup, e a marca/letra de
+   personalização queimadas no preview. Pede explicitamente um padrão
+   contínuo, porque o destino é cilíndrico.
+2. **Prompt → imagem** (`dispararGeracao` + `consultarJob`): o PIAPP gera a
+   imagem como job assíncrono — dispara, guarda `job_id`, o cliente faz poll
+   de 6 em 6s em `/api/rotab/status` até `completed`/`failed`. Nunca é uma
+   chamada síncrona bloqueante.
+
+A MESMA restrição negativa (sem texto, sem logo, sem hardware de case) é
+reforçada nas duas etapas — um modelo generativo tende a "vazar" o produto de
+origem mesmo com uma descrição limpa; a correção é redundância deliberada,
+não confiar num só lugar.
+
+A `output_url` que o PIAPP devolve é assinada e expira em cerca de 1h — por
+isso, assim que o job completa, os bytes são baixados e persistidos em
+`rotab_chunks` (fatiados em base64, abaixo do limite por linha do D1/SQLite).
+`/api/rotab/imagem?id=` remonta os chunks e serve com cache longo; a
+`output_url` do provedor nunca é exposta ao cliente.
+
+**Isso é uma aposta, não uma garantia** — ao contrário do rapport
+determinístico (que fecha por construção, erro zero), aqui a costura só é
+descoberta depois. Por isso `medirCostura()` roda igual nas duas rotas, e a
+Entrega mostra "emenda visível/invisível" nos dois casos. Requer o segredo
+`PIAPP_TOKEN` (`setAppSecret`), além do `AI_PROXY_TOKEN` já usado pelos
+agentes.
+
 ## Duas coisas verificadas que poupam tempo
 
 1. **`gold.estampa_opportunity` está furada.** Parece feita pra isso, mas o

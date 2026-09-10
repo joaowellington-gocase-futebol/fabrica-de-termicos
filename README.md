@@ -34,6 +34,12 @@ Um agente por pessoa, seis no total. Ninguém depende de ninguém para começar.
 Os agentes só rodam com o segredo `AI_PROXY_TOKEN` configurado no app
 (`setAppSecret`, nunca no código). Sem ele o painel avisa na primeira tela.
 
+Quando a arte é fundo contínuo (o Leitor marca `separavel=false`), o Estúdio
+usa a rota generativa (visão → prompt → PIAPP) em vez de recortar — precisa
+também do segredo `PIAPP_TOKEN`. Sem ele, essa rota específica falha e avisa
+na tela; o resto do painel continua funcionando normal. Detalhes em
+[docs/COMO-FUNCIONA.md](docs/COMO-FUNCIONA.md#rota-generativa-piapp).
+
 ## Próximo passo
 
 Rodar o **Leitor** nas estampas campeãs de capinha e contar quantas ele marca

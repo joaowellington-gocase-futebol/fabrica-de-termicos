@@ -7,6 +7,12 @@
  *
  * A costura fecha porque cada peça é desenhada três vezes: em x-L, x e x+L.
  * Nada disso passa por modelo generativo — por isso a arte chega intacta.
+ *
+ * Quando o Leitor marca separavel=false (fundo contínuo, sem motivo pra
+ * recortar), a etapa 5 muda de rota — etapaSepararGenerativa() + gerarViaPiapp()
+ * pedem ao PIAPP um padrão novo (visão -> prompt -> job assíncrono, o mesmo
+ * padrão do app benchmark-mockups). Aí sim é uma aposta, não uma garantia —
+ * por isso a costura continua sendo medida na entrega, como na rota de cima.
  */
 (function () {
   "use strict";
@@ -22,9 +28,15 @@
     cores: null,       // saída do agente Variação de cor
     colecao: null,     // saída do agente Set/Coleção
     pecas: [],         // [{canvas, x, y, w, h, area, on}]
+    rotabPrompt: null, // rota generativa: prompt de geração (visão -> texto, PIAPP)
     escolhidas: [],    // chaves de máscara
     saidas: []         // [{mascara, canvas, mockup}]
   };
+
+  /** true quando o Leitor não achou motivo isolável — vai pra rota B (PIAPP). */
+  function rotaGenerativa() { return !!(S.leitura && S.leitura.separavel === false); }
+  /** etapa 5 (Separador) está pronta tanto na rota determinística quanto na B. */
+  function passoSepararOk() { return rotaGenerativa() ? !!S.rotabPrompt : S.pecas.length > 0; }
 
   var ETAPAS = [
     { k: "case",     t: "Produto de origem", s: "escolher a case" },
@@ -314,13 +326,13 @@
     if (i === 1) return !!S.case;
     if (i === 2 || i === 3) return !!S.leitura;
     if (i === 4) return !!S.leitura;
-    if (i === 5) return S.pecas.length > 0;
+    if (i === 5) return passoSepararOk();
     if (i === 6) return S.saidas.length > 0;
     return false;
   }
   function feita(i) {
     return [!!S.case, !!S.leitura, !!S.cores, !!S.colecao,
-            S.pecas.length > 0, S.escolhidas.length > 0, S.saidas.length > 0][i];
+            passoSepararOk(), S.escolhidas.length > 0, S.saidas.length > 0][i];
   }
 
   function trilha() {
@@ -406,7 +418,7 @@
                         '<b>' + esc(it.nome) + '</b><span>' + esc(it.sku) + '</span>';
           b.addEventListener("click", function () {
             S.case = it; S.imagem = null; S.leitura = null; S.cores = null;
-            S.colecao = null; S.pecas = []; S.saidas = [];
+            S.colecao = null; S.pecas = []; S.rotabPrompt = null; S.saidas = [];
             Array.prototype.forEach.call(g.children, function (o) { o.setAttribute("aria-pressed", "false"); });
             b.setAttribute("aria-pressed", "true");
             btn.disabled = false;
@@ -616,6 +628,7 @@
 
   // ---------- 5. separador ----------
   function etapaSeparar(palco) {
+    if (rotaGenerativa()) { etapaSepararGenerativa(palco); return; }
     var v = painel("Separador",
       "Aqui não tem IA: o fundo sai por preenchimento a partir das bordas e cada motivo é " +
       "recortado por vizinhança de pixel. A arte continua exatamente a mesma — nada é redesenhado. " +
@@ -709,6 +722,124 @@
     });
   }
 
+  // ---------- 5b. separador · rota generativa (fundo contínuo -> PIAPP) ----------
+  //
+  // Sem motivo isolável para recortar: dois agentes em cadeia descrevem a
+  // arte em texto (ignorando case, logo e letra de personalização) e o PIAPP
+  // gera um padrão novo, do zero, seamless. É uma aposta, não uma garantia —
+  // por isso a costura continua sendo MEDIDA na entrega, igual à rota
+  // determinística (docs/COMO-FUNCIONA.md § Por que o rapport não é IA).
+  function etapaSepararGenerativa(palco) {
+    var v = painel("Separador · rota generativa",
+      "O Leitor não achou motivo isolável nesta arte — é fundo contínuo. Aqui não tem recorte de pixel: " +
+      "um agente de visão descreve a arte em texto (ignorando case, logo e letra de personalização) e o " +
+      "PIAPP gera um padrão novo a partir do texto. Revise o prompt antes de gerar — é a única alavanca " +
+      "desta etapa.");
+    var lado = el("div");
+    v.bd.appendChild(lado);
+    palco.appendChild(v.p);
+
+    var b = el("button", "btn primary", S.rotabPrompt ? "Gerar prompt de novo" : "Gerar prompt");
+    b.type = "button"; v.ft.appendChild(b);
+    var prox2 = avancar(v.ft, "Escolher as máscaras", 5, !!S.rotabPrompt);
+
+    function mostrar() {
+      lado.innerHTML =
+        '<span class="rot">prompt de geração (editável, em inglês)</span>' +
+        '<textarea id="rotab-prompt" class="txt" style="width:100%;min-height:130px;' +
+          'font-family:\'IBM Plex Mono\',monospace;font-size:12.5px;line-height:1.5"></textarea>' +
+        '<div style="margin-top:7px;font-size:12px;color:var(--muted)">' +
+          'Editar aqui muda só esta geração. Ao gerar, o mesmo tipo de restrição (sem case, sem texto, ' +
+          'sem logo) é reforçado de novo — reduz o risco de o PIAPP "vazar" o produto de origem.</div>';
+      $("rotab-prompt").value = S.rotabPrompt;
+      $("rotab-prompt").addEventListener("input", function (e) { S.rotabPrompt = e.target.value; });
+    }
+
+    if (S.rotabPrompt) mostrar();
+    else lado.innerHTML = '<div class="vazio">Clique em Gerar prompt.</div>';
+
+    b.addEventListener("click", function () {
+      b.disabled = true; b.textContent = "Descrevendo a arte…";
+      lado.innerHTML = '<div class="carregando"><span class="spin"></span>' +
+                        'o agente de visão está descrevendo a arte…</div>';
+      api("/api/rotab/prompt", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ arte: S.case.arte })
+      }).then(function (r) {
+        S.rotabPrompt = r.prompt; mostrar();
+        prox2.disabled = false; trilha();
+        toast("Prompt gerado.");
+      }).catch(function (e) {
+        lado.innerHTML = '<div class="aviso err">' + esc(e.message) + '</div>';
+      }).then(function () { b.disabled = false; b.textContent = "Gerar prompt de novo"; });
+    });
+  }
+
+  /** Carrega uma imagem já servida por esta mesma origem (sem precisar do proxy /api/img). */
+  function carregarImagemLocal(url) {
+    return new Promise(function (ok, erro) {
+      var i = new Image();
+      i.crossOrigin = "anonymous";
+      i.onload = function () { ok(i); };
+      i.onerror = function () { erro(new Error("Não consegui carregar a imagem gerada.")); };
+      i.src = url;
+    });
+  }
+
+  /** Poll do job PIAPP: 6s entre tentativas, até 40 (4 minutos) — como no benchmark-mockups. */
+  function aguardarPiapp(id) {
+    var tentativas = 0;
+    return new Promise(function (ok, erro) {
+      (function checar() {
+        tentativas++;
+        api("/api/rotab/status?id=" + id).then(function (s) {
+          if (s.status === "completed") { ok("/api/rotab/imagem?id=" + id); return; }
+          if (s.status === "failed") { erro(new Error(s.erro || "Falhou na geração.")); return; }
+          if (tentativas >= 40) { erro(new Error("A geração passou de 4 minutos e foi cancelada.")); return; }
+          setTimeout(checar, 6000);
+        }).catch(erro);
+      })();
+    });
+  }
+
+  /** Rota B: gera um padrão por máscara escolhida via PIAPP e monta S.saidas. */
+  function gerarViaPiapp(ger) {
+    if (!S.rotabPrompt) { toast("Gere o prompt na etapa anterior primeiro.", true); return; }
+    ger.disabled = true;
+    var total = S.escolhidas.length, feitos = 0;
+    ger.textContent = "Gerando 0/" + total + "…";
+
+    var tarefas = S.escolhidas.map(function (ch) {
+      var m = S.mascaras.filter(function (x) { return x.chave === ch; })[0];
+      return api("/api/rotab/gerar", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ caminho: S.case.caminho, mascara: ch, prompt: S.rotabPrompt })
+      }).then(function (r) { return aguardarPiapp(r.id); })
+        .then(carregarImagemLocal)
+        .then(function (img) {
+          var cv = document.createElement("canvas");
+          cv.width = m.w; cv.height = m.h;
+          var cx = cv.getContext("2d");
+          // cover-fit: preenche a máscara inteira (o PIAPP não devolve o pixel exato pedido)
+          var k = Math.max(m.w / img.naturalWidth, m.h / img.naturalHeight);
+          var w = img.naturalWidth * k, h = img.naturalHeight * k;
+          cx.drawImage(img, (m.w - w) / 2, (m.h - h) / 2, w, h);
+          feitos++; ger.textContent = "Gerando " + feitos + "/" + total + "…";
+          return { mascara: m, canvas: cv, costura: medirCostura(cv), gerado: true };
+        });
+    });
+
+    Promise.all(tarefas).then(function (saidas) {
+      S.saidas = saidas;
+      ger.disabled = false; ger.textContent = "Gerar os padrões";
+      trilha(); ir(6);
+      toast(total + " padrão(ões) gerado(s) pelo PIAPP.");
+    }).catch(function (e) {
+      ger.disabled = false; ger.textContent = "Gerar os padrões";
+      toast(e.message, true);
+    });
+  }
+
   // ---------- 6. máscaras ----------
   function etapaMascaras(palco) {
     var v = painel("Máscaras dos térmicos",
@@ -733,10 +864,14 @@
       g.appendChild(b);
     });
     v.bd.appendChild(g);
-    var nota = el("div", null,
-      '<div style="margin-top:14px;font-size:13px;color:var(--muted)">' +
-      'O padrão é montado com as peças que você deixou ligadas, e a costura é fechada desenhando ' +
-      'cada peça também em <span class="mono">x−L</span> e <span class="mono">x+L</span>.</div>');
+    var nota = el("div", null, rotaGenerativa()
+      ? '<div style="margin-top:14px;font-size:13px;color:var(--muted)">' +
+        'Rota generativa: cada máscara escolhida vira um job separado no PIAPP, a partir do prompt da ' +
+        'etapa anterior. A costura não é garantida por construção aqui — ela é medida na entrega, como ' +
+        'na rota determinística.</div>'
+      : '<div style="margin-top:14px;font-size:13px;color:var(--muted)">' +
+        'O padrão é montado com as peças que você deixou ligadas, e a costura é fechada desenhando ' +
+        'cada peça também em <span class="mono">x−L</span> e <span class="mono">x+L</span>.</div>');
     v.bd.appendChild(nota);
     palco.appendChild(v.p);
 
@@ -746,6 +881,7 @@
     v.ft.appendChild(ger);
 
     ger.addEventListener("click", function () {
+      if (rotaGenerativa()) { gerarViaPiapp(ger); return; }
       ger.disabled = true; ger.textContent = "Gerando…";
       var pecas = S.pecas.filter(function (p) { return p.on; });
       if (!pecas.length) { toast("Ligue pelo menos uma peça na etapa anterior.", true); ger.disabled = false; return; }
