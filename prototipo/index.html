@@ -1,0 +1,562 @@
+<title>Fábrica de Térmicos</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap">
+<style>
+  :root{
+    --ground:#F4F6F6; --surface:#FFFFFF; --surface-2:#EDF1F1;
+    --ink:#141B1E; --ink-2:#3D4A50; --muted:#6B7B82;
+    --line:#D9E0E1; --line-2:#C3CDCF;
+    --accent:#0E6E6E; --accent-soft:#DCEDEC; --accent-ink:#0A5252;
+    --ok:#2E7D4F; --ok-soft:#DFEFE5;
+    --warn:#9A6512; --warn-soft:#F6EBD6;
+    --crit:#AE352C; --crit-soft:#F7E0DE;
+    --det:#1F6F45; --det-soft:#E1F0E7;
+    --shadow:0 1px 2px rgba(20,27,30,.06),0 8px 24px -16px rgba(20,27,30,.28);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0D1214; --surface:#141B1E; --surface-2:#1B2427;
+      --ink:#EAEFEF; --ink-2:#B7C3C6; --muted:#849499;
+      --line:#263237; --line-2:#33434A;
+      --accent:#4FBDB4; --accent-soft:#12312F; --accent-ink:#7FD6CD;
+      --ok:#5FBF87; --ok-soft:#122C1E;
+      --warn:#D9A44E; --warn-soft:#2E2413;
+      --crit:#E4796E; --crit-soft:#331A18;
+      --det:#5FBF87; --det-soft:#12291D;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -18px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0D1214; --surface:#141B1E; --surface-2:#1B2427;
+    --ink:#EAEFEF; --ink-2:#B7C3C6; --muted:#849499;
+    --line:#263237; --line-2:#33434A;
+    --accent:#4FBDB4; --accent-soft:#12312F; --accent-ink:#7FD6CD;
+    --ok:#5FBF87; --ok-soft:#122C1E;
+    --warn:#D9A44E; --warn-soft:#2E2413;
+    --crit:#E4796E; --crit-soft:#331A18;
+    --det:#5FBF87; --det-soft:#12291D;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -18px rgba(0,0,0,.8);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+  .cond{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif}
+  h1,h2,h3{margin:0;text-wrap:balance;font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif}
+  .eyebrow{
+    font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:500;
+    letter-spacing:.13em; text-transform:uppercase; color:var(--muted);
+  }
+  .shell{max-width:1280px;margin:0 auto;padding:0 24px 72px}
+
+  /* ---- topo ---- */
+  header.top{
+    border-bottom:1px solid var(--line); background:var(--surface);
+    position:sticky; top:0; z-index:20;
+  }
+  .top-in{
+    max-width:1280px;margin:0 auto;padding:14px 24px;
+    display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
+  .brand h1{font-size:19px;font-weight:700;letter-spacing:-.01em}
+  .brand .sub{font-size:11.5px;color:var(--muted)}
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
+    font-size:11.5px;font-weight:500;border:1px solid transparent;white-space:nowrap;
+  }
+  .pill.live{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent)}
+  .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+  .proto-tag{
+    font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--warn);background:var(--warn-soft);
+    border:1px solid var(--warn);padding:3px 8px;border-radius:4px;
+  }
+
+  /* ---- faixa supervisor ---- */
+  .sup{
+    margin-top:20px;background:var(--surface);border:1px solid var(--line);
+    border-left:3px solid var(--accent);border-radius:6px;padding:14px 18px;
+    display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;box-shadow:var(--shadow);
+  }
+  .sup p{margin:4px 0 0;font-size:13.5px;color:var(--ink-2);max-width:66ch}
+  .sup-stats{display:flex;gap:26px}
+  .stat{text-align:right}
+  .stat b{display:block;font-family:"IBM Plex Mono",monospace;font-size:21px;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+  .stat span{font-size:10.5px;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+
+  /* ---- layout principal ---- */
+  .grid{display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;margin-top:20px;align-items:start}
+  @media (max-width:900px){.grid{grid-template-columns:1fr}.sup{grid-template-columns:1fr}.sup-stats{justify-content:flex-start}.stat{text-align:left}}
+
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow)}
+  .panel-hd{padding:11px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .panel-hd h2{font-size:12.5px;font-weight:600;letter-spacing:.02em}
+  .count{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted)}
+
+  /* ---- fila ---- */
+  .fila{list-style:none;margin:0;padding:0;max-height:560px;overflow-y:auto}
+  .fila li{border-bottom:1px solid var(--line)}
+  .fila li:last-child{border-bottom:0}
+  .fila button{
+    width:100%;text-align:left;background:none;border:0;padding:10px 14px;cursor:pointer;
+    display:grid;grid-template-columns:1fr auto;gap:3px 10px;color:inherit;font:inherit;
+    border-left:3px solid transparent;
+  }
+  .fila button:hover{background:var(--surface-2)}
+  .fila button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .fila button[aria-current="true"]{background:var(--accent-soft);border-left-color:var(--accent)}
+  .fila .nm{font-weight:500;font-size:13.5px}
+  .fila .un{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-2)}
+  .fila .st{grid-column:1/-1;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+  .chip{
+    font-family:"IBM Plex Mono",monospace;font-size:10px;padding:1.5px 6px;border-radius:3px;
+    letter-spacing:.04em;border:1px solid;white-space:nowrap;
+  }
+  .c-ok{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
+  .c-run{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent)}
+  .c-warn{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+  .c-crit{background:var(--crit-soft);color:var(--crit);border-color:var(--crit)}
+  .c-idle{background:var(--surface-2);color:var(--muted);border-color:var(--line-2)}
+
+  /* ---- card ---- */
+  .card-hd{padding:16px 20px;border-bottom:1px solid var(--line)}
+  .card-hd .row{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+  .card-hd h2{font-size:22px;font-weight:700;letter-spacing:-.015em}
+  .idpath{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted);margin-top:5px}
+  .idpath b{color:var(--accent-ink);font-weight:500}
+  .metrics{display:flex;gap:22px;margin-left:auto}
+  .metrics .stat b{font-size:17px}
+
+  /* ---- cadeia de agentes ---- */
+  .chain{padding:14px 20px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+  .chain-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+  .ag{
+    display:flex;align-items:center;gap:6px;background:var(--surface);
+    border:1px solid var(--line-2);border-radius:4px;padding:5px 9px;font-size:11.5px;
+  }
+  .ag .k{font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:600;color:var(--muted)}
+  .ag.done{border-color:var(--ok)}
+  .ag.done .k{color:var(--ok)}
+  .ag.block{border-color:var(--crit);background:var(--crit-soft)}
+  .ag.block .k{color:var(--crit)}
+  .ag.pend{opacity:.5}
+  .ag .v{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--ink-2)}
+
+  /* ---- estágios visuais ---- */
+  .stages{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0}
+  @media (min-width:1060px){
+    .stages{grid-template-columns:1fr 1fr 1.6fr 1fr}
+  }
+  @media (max-width:620px){.stages{grid-template-columns:1fr}}
+  .stage{padding:16px 20px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);min-width:0}
+  .stage:last-child{border-right:0}
+  .stage h3{font-size:11.5px;font-weight:600;margin-bottom:2px}
+  .stage .note{font-size:11.5px;color:var(--muted);margin:4px 0 10px;min-height:2.6em}
+  .tag-det{
+    font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+    padding:2px 5px;border-radius:3px;background:var(--det-soft);color:var(--det);border:1px solid var(--det);
+  }
+  .tag-ia{
+    font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+    padding:2px 5px;border-radius:3px;background:var(--accent-soft);color:var(--accent-ink);border:1px solid var(--accent);
+  }
+  .art{background:var(--surface-2);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+  .art svg{display:block;width:100%;height:auto}
+  .cutgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px}
+  .cut{background:var(--surface);border:1px solid var(--line);border-radius:3px;aspect-ratio:1;display:grid;place-items:center}
+  .cut svg{width:76%;height:76%}
+  .cut.drop{opacity:.32;border-style:dashed}
+  .seamnote{
+    display:flex;align-items:center;gap:7px;margin-top:8px;font-family:"IBM Plex Mono",monospace;
+    font-size:10.5px;color:var(--det);
+  }
+  .rul{display:flex;justify-content:space-between;font-family:"IBM Plex Mono",monospace;font-size:9.5px;color:var(--muted);margin-top:5px}
+
+  /* ---- ações ---- */
+  .actions{padding:14px 20px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .btn{
+    font:inherit;font-size:13px;font-weight:500;padding:8px 15px;border-radius:5px;cursor:pointer;
+    border:1px solid var(--line-2);background:var(--surface);color:var(--ink);
+  }
+  .btn:hover{border-color:var(--muted)}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-ink);border-color:var(--accent-ink)}
+  .btn.danger{color:var(--crit);border-color:var(--crit)}
+  .hint{font-size:11.5px;color:var(--muted);margin-left:auto}
+
+  /* ---- organograma ---- */
+  .org{margin-top:34px}
+  .org-hd{display:flex;align-items:baseline;gap:12px;margin-bottom:4px;flex-wrap:wrap}
+  .org-hd h2{font-size:17px;font-weight:700}
+  .org-lede{font-size:13.5px;color:var(--ink-2);max-width:70ch;margin:0 0 16px}
+  .sup-node{
+    background:var(--ink);color:var(--ground);border-radius:6px;padding:13px 18px;
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  }
+  .sup-node .k{font-family:"IBM Plex Mono",monospace;font-size:11px;opacity:.72;letter-spacing:.08em}
+  .sup-node b{font-family:"IBM Plex Sans Condensed",sans-serif;font-size:15px;letter-spacing:.01em}
+  .sup-node span{font-size:12px;opacity:.75;margin-left:auto}
+  .dirs{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:14px}
+  .dir{background:var(--surface);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .dir-hd{padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+  .dir-hd b{font-family:"IBM Plex Sans Condensed",sans-serif;font-size:12.5px;letter-spacing:.03em;text-transform:uppercase}
+  .dir-hd i{display:block;font-style:normal;font-size:11.5px;color:var(--muted);margin-top:1px}
+  .dir ul{list-style:none;margin:0;padding:6px}
+  .dir li{padding:8px 9px;border-radius:4px;display:grid;grid-template-columns:auto 1fr;gap:3px 9px}
+  .dir li+li{margin-top:2px}
+  .dir li .k{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--accent-ink)}
+  .dir li .n{font-size:13px;font-weight:500}
+  .dir li .d{grid-column:2;font-size:11.5px;color:var(--muted)}
+  .dir li.veto{background:var(--crit-soft)}
+  .dir li.veto .k{color:var(--crit)}
+  .eye{font-size:10px;opacity:.65}
+
+  footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;color:var(--muted)}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <h1>Fábrica de Térmicos</h1>
+      <span class="sub cond">case best-seller → garrafa com rapport</span>
+    </div>
+    <span class="proto-tag">protótipo · dados de exemplo</span>
+    <span class="pill live"><span class="dot"></span>esteira ativa</span>
+  </div>
+</header>
+
+<div class="shell">
+
+  <section class="sup">
+    <div>
+      <span class="eyebrow">A10 · supervisor da esteira</span>
+      <p id="sup-msg">12 candidatas entraram hoje. 9 fecharam sozinhas, 3 estão na sua fila.
+        Padrão detectado: as três reprovas de costura são artes de aquarela — vale revisar o plano do A3 para fundo contínuo.</p>
+    </div>
+    <div class="sup-stats">
+      <div class="stat"><b>12</b><span>hoje</span></div>
+      <div class="stat"><b>75%</b><span>automático</span></div>
+      <div class="stat"><b>R$&nbsp;0,04</b><span>por estampa</span></div>
+    </div>
+  </section>
+
+  <div class="grid">
+
+    <!-- FILA -->
+    <section class="panel" aria-label="Fila de candidatas">
+      <div class="panel-hd">
+        <h2 class="cond">FILA</h2>
+        <span class="count" id="fila-count">9 itens</span>
+      </div>
+      <ul class="fila" id="fila"></ul>
+    </section>
+
+    <!-- CARD -->
+    <section class="panel" aria-live="polite">
+      <div class="card-hd">
+        <div class="row">
+          <div>
+            <span class="eyebrow">candidata selecionada</span>
+            <h2 id="c-nome">Lavanda</h2>
+            <div class="idpath">
+              <span id="c-from">lavanda-case</span> → <b id="c-to">lavanda-termicos</b>
+              &nbsp;·&nbsp; Garrafa Fresh 650ml &nbsp;·&nbsp; <span id="c-mask">2754 × 2340 px</span>
+            </div>
+          </div>
+          <div class="metrics">
+            <div class="stat"><b id="c-un">2.366</b><span>un. case 90d</span></div>
+            <div class="stat"><b id="c-rec">R$ 153k</b><span>receita case</span></div>
+            <div class="stat"><b id="c-tema">Florais</b><span>tema</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chain">
+        <span class="eyebrow">cadeia de agentes</span>
+        <div class="chain-row" id="chain"></div>
+      </div>
+
+      <div class="stages">
+
+        <div class="stage">
+          <h3 class="cond">1 · ARTE ORIGINAL <span class="tag-det">determinístico</span></h3>
+          <p class="note">Resolvida na cascata Factory → Site → Catalog. Nenhum pixel é redesenhado daqui em diante.</p>
+          <div class="art">
+            <svg viewBox="0 0 300 300" role="img" aria-label="Arte da case: ramos de lavanda sobre fundo claro">
+              <rect width="300" height="300" fill="#F2E8DC"/>
+              <use href="#ramo" x="52" y="44" transform="scale(.85)"/>
+              <use href="#ramo" x="196" y="96" transform="scale(.72) rotate(14 196 96)"/>
+              <use href="#ramo" x="96" y="196" transform="scale(.78) rotate(-9 96 196)"/>
+              <use href="#folha" x="232" y="220"/>
+              <use href="#folha" x="42" y="252" transform="rotate(28 42 252)"/>
+            </svg>
+          </div>
+          <div class="rul"><span>fundo #F2E8DC · sólido</span><span>separável</span></div>
+        </div>
+
+        <div class="stage">
+          <h3 class="cond">2 · ASSETS SEPARADOS <span class="tag-det">determinístico</span></h3>
+          <p class="note">Flood-fill do fundo sólido, componentes conexos no alpha. O A4 fundiu 2 fragmentos e descartou 1 respingo.</p>
+          <div class="art cutgrid">
+            <div class="cut"><svg viewBox="0 0 90 120"><use href="#ramo-s"/></svg></div>
+            <div class="cut"><svg viewBox="0 0 90 120"><use href="#ramo-s" transform="rotate(12 45 60)"/></svg></div>
+            <div class="cut"><svg viewBox="0 0 90 120"><use href="#folha-s"/></svg></div>
+            <div class="cut drop"><svg viewBox="0 0 90 120"><circle cx="45" cy="60" r="5" fill="#8B7AA8"/></svg></div>
+          </div>
+          <div class="rul"><span>4 peças · 1 descartada</span><span>qualidade 0,88</span></div>
+        </div>
+
+        <div class="stage">
+          <h3 class="cond">3 · RAPPORT NA MÁSCARA <span class="tag-det">determinístico</span></h3>
+          <p class="note">Cada camada é desenhada em x−W, x e x+W. O ladrilho abaixo é o mesmo tile 3×: repare que a costura não aparece.</p>
+          <div class="art">
+            <svg viewBox="0 0 918 260" role="img" aria-label="Tile de rapport repetido três vezes, sem costura visível nas emendas">
+              <defs>
+                <g id="tile">
+                  <rect width="306" height="260" fill="#F2E8DC"/>
+                  <use href="#ramo-t" x="84" y="34"/>
+                  <use href="#ramo-t" x="212" y="150" transform="rotate(15 212 150)"/>
+                  <use href="#folha-t" x="146" y="196"/>
+                  <!-- motivo que cruza a costura: desenhado nas duas pontas -->
+                  <use href="#ramo-t" x="292" y="104"/>
+                  <use href="#ramo-t" x="-14" y="104"/>
+                </g>
+              </defs>
+              <use href="#tile" x="0"/><use href="#tile" x="306"/><use href="#tile" x="612"/>
+              <line x1="306" y1="0" x2="306" y2="260" stroke="#0E6E6E" stroke-width="1" stroke-dasharray="4 5" opacity=".5"/>
+              <line x1="612" y1="0" x2="612" y2="260" stroke="#0E6E6E" stroke-width="1" stroke-dasharray="4 5" opacity=".5"/>
+            </svg>
+          </div>
+          <div class="seamnote"><span class="dot" style="background:var(--det)"></span>erro de costura: 0 px — por construção</div>
+        </div>
+
+        <div class="stage">
+          <h3 class="cond">4 · PRODUTO <span class="tag-ia">A6 colorista</span></h3>
+          <p class="note">O A6 mediu o contraste da arte contra cada corpo. Recomenda branco; reprova preto — arte clara desaparece.</p>
+          <div class="art" style="display:grid;place-items:center;padding:10px">
+            <svg viewBox="0 0 150 200" role="img" aria-label="Mockup da garrafa térmica Fresh 650ml com a estampa aplicada">
+              <rect x="52" y="6" width="46" height="20" rx="5" fill="#C9CFCF"/>
+              <path d="M40 30 h70 a10 10 0 0 1 10 10 v140 a12 12 0 0 1 -12 12 h-66 a12 12 0 0 1 -12 -12 v-140 a10 10 0 0 1 10 -10 z" fill="#F2E8DC" stroke="#C9CFCF"/>
+              <clipPath id="bod"><path d="M40 30 h70 a10 10 0 0 1 10 10 v140 a12 12 0 0 1 -12 12 h-66 a12 12 0 0 1 -12 -12 v-140 a10 10 0 0 1 10 -10 z"/></clipPath>
+              <g clip-path="url(#bod)">
+                <use href="#ramo-t" x="46" y="48" transform="scale(.62) translate(28 26)"/>
+                <use href="#ramo-t" x="96" y="118" transform="scale(.58) rotate(12 96 118) translate(30 40)"/>
+                <use href="#folha-t" x="58" y="150" transform="scale(.6) translate(36 60)"/>
+              </g>
+              <path d="M40 30 h70 a10 10 0 0 1 10 10 v140 a12 12 0 0 1 -12 12 h-66 a12 12 0 0 1 -12 -12 v-140 a10 10 0 0 1 10 -10 z" fill="none" stroke="#C3CDCF" stroke-width="1.2"/>
+              <ellipse cx="75" cy="196" rx="34" ry="4" fill="#141B1E" opacity=".07"/>
+            </svg>
+          </div>
+          <div class="rul"><span>corpo branco · nota 9</span><span>preto reprovado</span></div>
+        </div>
+
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" type="button">Aprovar e cadastrar</button>
+        <button class="btn" type="button">Ajustar composição</button>
+        <button class="btn danger" type="button">Reprovar</button>
+        <span class="hint">Aprovar grava <span class="mono">lavanda-termicos</span> com nome, SKU e descrição já prontos.</span>
+      </div>
+    </section>
+  </div>
+
+  <!-- ORGANOGRAMA -->
+  <section class="org">
+    <div class="org-hd">
+      <span class="eyebrow">AI Proxy · gpt-5.5</span>
+      <h2 class="cond">Organograma das funções de IA</h2>
+    </div>
+    <p class="org-lede">Dez agentes em quatro diretorias. Nenhum deles toca a geometria: o rapport e o recorte
+      continuam determinísticos, e é isso que mantém a arte da best-seller intacta e a costura em zero.</p>
+
+    <div class="sup-node">
+      <span class="k">A10</span>
+      <b>SUPERVISOR DA ESTEIRA</b>
+      <span>prioriza · reprocessa · escala para humano · resume o dia</span>
+    </div>
+
+    <div class="dirs">
+      <div class="dir">
+        <div class="dir-hd"><b>Demanda</b><i>vale adaptar esta estampa?</i></div>
+        <ul>
+          <li><span class="k">A1</span><span class="n">Analista de Portfólio</span>
+              <span class="d">ranking com racional, janela e risco</span></li>
+        </ul>
+      </div>
+      <div class="dir">
+        <div class="dir-hd"><b>Leitura</b><i>o que esta arte é?</i></div>
+        <ul>
+          <li><span class="k">A2</span><span class="n">Leitor de Estampa <span class="eye">👁</span></span>
+              <span class="d">roteia a esteira; barra texto e logo</span></li>
+        </ul>
+      </div>
+      <div class="dir">
+        <div class="dir-hd"><b>Criação</b><i>como ela vira térmico?</i></div>
+        <ul>
+          <li><span class="k">A3</span><span class="n">Estrategista de Composição</span>
+              <span class="d">estilo, escala, densidade alvo</span></li>
+          <li><span class="k">A4</span><span class="n">Copiloto de Segmentação <span class="eye">👁</span></span>
+              <span class="d">funde fragmentos, descarta ruído</span></li>
+        </ul>
+      </div>
+      <div class="dir">
+        <div class="dir-hd"><b>Qualidade</b><i>pode ir pro catálogo?</i></div>
+        <ul>
+          <li><span class="k">A5</span><span class="n">Auditor de Costura <span class="eye">👁</span></span>
+              <span class="d">nota 0–10; abaixo de 7 devolve ao A3</span></li>
+          <li><span class="k">A6</span><span class="n">Colorista <span class="eye">👁</span></span>
+              <span class="d">em qual corpo a estampa sai</span></li>
+          <li class="veto"><span class="k">A7</span><span class="n">Revisor de Marca <span class="eye">👁</span></span>
+              <span class="d">veto absoluto: logo, texto, IP de terceiro</span></li>
+          <li><span class="k">A8</span><span class="n">Nomeador</span>
+              <span class="d">nome, SKU e engine_identifier</span></li>
+          <li><span class="k">A9</span><span class="n">Redator de Catálogo</span>
+              <span class="d">descrição, alt text e tags</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Protótipo de interface — números de venda são reais (datamart <span class="mono">gold.product_estampa_daily</span>,
+    janela de 90 dias); as artes são representações de exemplo, não os arquivos do catálogo.
+  </footer>
+</div>
+
+<!-- biblioteca de motivos -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="ramo">
+      <path d="M0 96 C 4 62, 10 34, 22 0" stroke="#6E7F5B" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <ellipse cx="6" cy="70" rx="7" ry="12" fill="#8B7AA8" transform="rotate(-18 6 70)"/>
+      <ellipse cx="12" cy="50" rx="7" ry="12" fill="#9D8BB8" transform="rotate(-14 12 50)"/>
+      <ellipse cx="17" cy="30" rx="6" ry="11" fill="#8B7AA8" transform="rotate(-10 17 30)"/>
+      <ellipse cx="21" cy="13" rx="5" ry="9" fill="#A697C2" transform="rotate(-6 21 13)"/>
+      <path d="M2 88 q -12 -6 -16 -18" stroke="#6E7F5B" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    </g>
+    <g id="folha">
+      <path d="M0 0 q 16 10 22 30 q -18 -2 -26 -16 z" fill="#7C8F66"/>
+    </g>
+    <g id="ramo-s">
+      <path d="M45 118 C 47 82, 50 50, 58 12" stroke="#6E7F5B" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <ellipse cx="47" cy="86" rx="9" ry="15" fill="#8B7AA8" transform="rotate(-16 47 86)"/>
+      <ellipse cx="51" cy="60" rx="9" ry="15" fill="#9D8BB8" transform="rotate(-12 51 60)"/>
+      <ellipse cx="55" cy="34" rx="8" ry="13" fill="#8B7AA8" transform="rotate(-8 55 34)"/>
+    </g>
+    <g id="folha-s">
+      <path d="M22 92 q 26 -20 42 -58 q -34 6 -46 34 z" fill="#7C8F66"/>
+    </g>
+    <g id="ramo-t">
+      <path d="M0 74 C 3 48, 8 26, 17 0" stroke="#6E7F5B" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+      <ellipse cx="4" cy="54" rx="5.5" ry="9.5" fill="#8B7AA8" transform="rotate(-16 4 54)"/>
+      <ellipse cx="9" cy="38" rx="5.5" ry="9.5" fill="#9D8BB8" transform="rotate(-12 9 38)"/>
+      <ellipse cx="13" cy="22" rx="5" ry="8.5" fill="#8B7AA8" transform="rotate(-8 13 22)"/>
+      <ellipse cx="16" cy="9" rx="4" ry="7" fill="#A697C2"/>
+    </g>
+    <g id="folha-t">
+      <path d="M0 0 q 13 8 18 24 q -15 -2 -21 -13 z" fill="#7C8F66"/>
+    </g>
+  </defs>
+</svg>
+
+<script>
+(function(){
+  "use strict";
+  var FILA = [
+    { key:"aquarela", nome:"Aquarela", tema:"Religião", un:4133, rec:260438, st:"aguardando", rota:"generativa",
+      chain:{A1:"1º",A2:"fundo contínuo",A3:"localizada",A4:"—",A5:"7,8",A6:"branco",A7:"limpo",A8:"ok",A9:"ok"} },
+    { key:"colagem", nome:"Colagem", tema:"Para Eles", un:2815, rec:178380, st:"bloqueado", rota:"—",
+      chain:{A1:"2º",A2:"tem texto",A3:"—",A4:"—",A5:"—",A6:"—",A7:"veto",A8:"—",A9:"—"} },
+    { key:"lavanda", nome:"Lavanda", tema:"Florais", un:2366, rec:153524, st:"aguardando", rota:"determinística",
+      chain:{A1:"3º",A2:"motivos isolados",A3:"stickers",A4:"0,88",A5:"9,1",A6:"branco",A7:"limpo",A8:"ok",A9:"ok"} },
+    { key:"watercolor-nature", nome:"Watercolor Nature", tema:"—", un:1769, rec:106604, st:"ajustar", rota:"generativa",
+      chain:{A1:"4º",A2:"misto",A3:"distribuído",A4:"0,61",A5:"6,2",A6:"—",A7:"—",A8:"—",A9:"—"} },
+    { key:"amendoeira-em-flor", nome:"Amendoeira em Flor", tema:"Florais", un:1635, rec:100027, st:"rodando", rota:"determinística",
+      chain:{A1:"5º",A2:"motivos isolados",A3:"distribuído",A4:"0,91",A5:"…",A6:"—",A7:"—",A8:"—",A9:"—"} },
+    { key:"mcqueen-love", nome:"Mcqueen Love", tema:"—", un:1093, rec:70602, st:"bloqueado", rota:"—",
+      chain:{A1:"6º",A2:"tem logo",A3:"—",A4:"—",A5:"—",A6:"—",A7:"veto",A8:"—",A9:"—"} },
+    { key:"filipenses-4-13", nome:"Filipenses 4:13", tema:"Cristianismo", un:1051, rec:66425, st:"bloqueado", rota:"—",
+      chain:{A1:"7º",A2:"tem texto",A3:"—",A4:"—",A5:"—",A6:"—",A7:"veto",A8:"—",A9:"—"} },
+    { key:"oncinha", nome:"Oncinha", tema:"—", un:1056, rec:69935, st:"aguardando", rota:"determinística",
+      chain:{A1:"8º",A2:"motivos isolados",A3:"linear",A4:"0,94",A5:"9,6",A6:"preto",A7:"limpo",A8:"ok",A9:"ok"} },
+    { key:"tulipa-cravejada", nome:"Tulipa Cravejada", tema:"Florais", un:959, rec:85796, st:"rodando", rota:"determinística",
+      chain:{A1:"9º",A2:"motivos isolados",A3:"stickers",A4:"0,86",A5:"…",A6:"—",A7:"—",A8:"—",A9:"—"} }
+  ];
+  var ST = {
+    aguardando:{cls:"c-ok",  txt:"aguardando aprovação"},
+    rodando:   {cls:"c-run", txt:"em processamento"},
+    ajustar:   {cls:"c-warn",txt:"reprovado no A5 · ajustar"},
+    bloqueado: {cls:"c-crit",txt:"bloqueado pelo A7"}
+  };
+  var AG = ["A1","A2","A3","A4","A5","A6","A7","A8","A9"];
+  var NOMES = {A1:"portfólio",A2:"leitor",A3:"estratégia",A4:"segmentação",
+               A5:"costura",A6:"cor",A7:"marca",A8:"nome",A9:"copy"};
+
+  var brl = function(n){
+    return n >= 1000 ? "R$ " + Math.round(n/1000) + "k" : "R$ " + n;
+  };
+  var num = function(n){ return n.toLocaleString("pt-BR"); };
+
+  var ul = document.getElementById("fila");
+  var chainEl = document.getElementById("chain");
+
+  function pintaCard(it){
+    document.getElementById("c-nome").textContent = it.nome;
+    document.getElementById("c-from").textContent = it.key + "-case";
+    document.getElementById("c-to").textContent   = it.key + "-termicos";
+    document.getElementById("c-un").textContent   = num(it.un);
+    document.getElementById("c-rec").textContent  = brl(it.rec);
+    document.getElementById("c-tema").textContent = it.tema;
+
+    chainEl.innerHTML = "";
+    AG.forEach(function(k){
+      var v = it.chain[k] || "—";
+      var d = document.createElement("div");
+      var cls = "ag";
+      if (k === "A7" && v === "veto") cls += " block";
+      else if (v === "—" || v === "…") cls += " pend";
+      else cls += " done";
+      d.className = cls;
+      d.innerHTML = '<span class="k">' + k + '</span><span>' + NOMES[k] +
+                    '</span><span class="v">' + v + '</span>';
+      chainEl.appendChild(d);
+    });
+  }
+
+  function seleciona(key){
+    var it = FILA.filter(function(x){ return x.key === key; })[0];
+    if (!it) return;
+    Array.prototype.forEach.call(ul.querySelectorAll("button"), function(b){
+      b.setAttribute("aria-current", String(b.dataset.key === key));
+    });
+    pintaCard(it);
+  }
+
+  FILA.forEach(function(it){
+    var s = ST[it.st];
+    var li = document.createElement("li");
+    var b  = document.createElement("button");
+    b.type = "button";
+    b.dataset.key = it.key;
+    b.setAttribute("aria-current", String(it.key === "lavanda"));
+    b.innerHTML =
+      '<span class="nm">' + it.nome + '</span>' +
+      '<span class="un">' + num(it.un) + '</span>' +
+      '<span class="st"><span class="chip ' + s.cls + '">' + s.txt + '</span>' +
+      '<span>' + it.rota + '</span></span>';
+    b.addEventListener("click", function(){ seleciona(it.key); });
+    li.appendChild(b);
+    ul.appendChild(li);
+  });
+
+  document.getElementById("fila-count").textContent = FILA.length + " itens";
+  pintaCard(FILA.filter(function(x){ return x.key === "lavanda"; })[0]);
+})();
+</script>
