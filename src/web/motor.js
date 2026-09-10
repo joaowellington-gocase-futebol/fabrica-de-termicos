@@ -824,7 +824,7 @@ export async function processaItem(item, opcoes = {}) {
   const img = await carregaImagem(item.png_alta);
 
   const { camadas: brutas, diagnostico } = await separa(img, leitura, opcoes);
-  if (!brutas.length) throw new Error('separador não achou nenhum motivo recortável');
+  if (!brutas.length) throw new Error('separador não achou nada, nem motivo nem fundo');
 
   const folha = contactSheet(brutas);
 
@@ -842,7 +842,23 @@ export async function processaItem(item, opcoes = {}) {
   }
 
   const colocacoes = layoutCompute(camadas, mascara, plano);
-  if (!colocacoes.length) throw new Error('layout não produziu nenhuma colocação');
+
+  // Arte de fundo contínuo (aquarela corrida, tie-dye) não tem motivo para
+  // distribuir: o separador devolve uma camada só, que cobre o canvas e por
+  // isso vira `kind: 'fundo'`. Nesse caso `composeFrom` estica o fundo na
+  // máscara e a composição sai — sem rapport, porque não há o que repetir.
+  //
+  // Isso NÃO é a rota generativa (PIAPP), que ainda não está implementada. É o
+  // degradê honesto até ela existir: produz uma arte que o A5 pode julgar, e a
+  // costura medida vai denunciar que a emenda não fecha, em vez de o item
+  // morrer com "layout vazio" e ninguém saber por quê.
+  const temFundo = camadas.some((c) => c.kind === 'fundo');
+  if (!colocacoes.length && !temFundo) {
+    throw new Error(
+      'layout não produziu colocação e não há camada de fundo — ' +
+        'arte provavelmente precisa da rota generativa (PIAPP), ainda não implementada',
+    );
+  }
 
   const composicao = composeFrom(camadas, colocacoes, mascara);
   const costura = medirCostura(composicao);
@@ -863,6 +879,7 @@ export async function processaItem(item, opcoes = {}) {
       camadas_finais: camadas.length,
       colocacoes: colocacoes.length,
       estilo: plano.estilo,
+      sem_rapport: colocacoes.length === 0,
       ms: Math.round(performance.now() - t0),
     },
   };
