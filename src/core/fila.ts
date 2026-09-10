@@ -23,10 +23,11 @@ import { nomear } from '../agentes/nomeador';
 import { redigir } from '../agentes/redator';
 import { bloqueioPorFalha, revisarMarca } from '../agentes/revisor';
 import { auditar } from '../agentes/auditor';
+import { julgar, julgamentoPorFalha } from '../agentes/fidelidade';
 import { proxyConfigurado } from './aiproxy';
 import { atualiza, falha, itemPorId, itensPorEstado, lePreview, registra } from './db';
-import { MASCARA_PADRAO, resolverArte } from './dados';
-import type { Env, ItemFila } from './tipos';
+import { MASCARA_PADRAO, resolverArte, zonaLogo } from './dados';
+import type { Env, ItemFila, MedicaoFidelidade } from './tipos';
 
 /** Duas reprovas de costura e o item vai para gente. */
 export const TETO_TENTATIVAS = 2;
@@ -43,7 +44,14 @@ const CORTE_CONFIANCA = 0.6;
  * `planejada` não está aqui de propósito: é o estágio do motor gráfico, que
  * roda no browser. `composta` está, porque a partir dali volta a ser IA.
  */
-export const AVANCAVEIS_POR_CRON = ['candidata', 'arte_ok', 'lida', 'composta', 'auditada'] as const;
+export const AVANCAVEIS_POR_CRON = [
+  'candidata',
+  'arte_ok',
+  'lida',
+  'composta',
+  'auditada',
+  'julgada',
+] as const;
 
 export interface ResultadoAvanco {
   item_id: number;
@@ -126,15 +134,29 @@ async function estagioResolver(env: Env, item: ItemFila, cookie: string): Promis
     await falha(env, item.id, 'resolvedor', 'nenhuma das três fontes tem PNG em alta desta estampa');
     return { item_id: item.id, de: item.estado, para: 'falhou_resolvedor', ok: false };
   }
+  // A zona da logo é lida agora, junto da arte, porque precisa do cookie — o
+  // cron não teria como buscá-la mais adiante na esteira.
+  const zona = arte.material ? await zonaLogo(env, cookie, arte.material) : null;
+
   await atualiza(env, item.id, {
     estado: 'arte_ok',
     png_alta: arte.png_alta,
     material: arte.material,
     engine_identifier: arte.engine_identifier,
+    arte_w: arte.arte_w,
+    arte_h: arte.arte_h,
+    zona_logo: zona,
     mascara_w: MASCARA_PADRAO.w,
     mascara_h: MASCARA_PADRAO.h,
   });
-  return { item_id: item.id, de: item.estado, para: 'arte_ok', ok: true, detalhe: arte.origem };
+  const detalheZona = zona?.disponivel ? 'com zona de logo' : 'sem zona de logo cadastrada';
+  return {
+    item_id: item.id,
+    de: item.estado,
+    para: 'arte_ok',
+    ok: true,
+    detalhe: `${arte.origem}, ${detalheZona}`,
+  };
 }
 
 /**
@@ -204,7 +226,7 @@ async function estagioPlanejar(env: Env, item: ItemFila): Promise<ResultadoAvanc
 
   let plano;
   try {
-    plano = await planejar(env, item.leitura, mascara, item.id, ajuste);
+    plano = await planejar(env, item.leitura, mascara, item.id, ajuste, item.zona_logo);
   } catch (e) {
     plano = planoPadrao(item.leitura);
     await registra(env, item.id, 'a3_fallback', (e as Error)?.message || 'A3 caiu', 'sistema');
@@ -274,7 +296,100 @@ async function estagioAuditar(env: Env, item: ItemFila): Promise<ResultadoAvanco
 }
 
 /**
- * auditada -> nomeada. A6, A7, A8 e A9 em sequência.
+ * auditada -> julgada. A11, o juiz dos cinco critérios.
+ *
+ * Roda DEPOIS do A5 e ANTES do A6/A7/A8/A9 de propósito: é caro gerar cor, copy
+ * e nome de uma arte que não passa de fidelidade. E roda com a arte ORIGINAL na
+ * mão, que é o que diferencia este agente do auditor.
+ */
+async function estagioJulgar(env: Env, item: ItemFila): Promise<ResultadoAvanco> {
+  const ladrilho = await imagemDoItem(env, item.id, 'ladrilho3x1');
+  if (!ladrilho || !item.png_alta) {
+    await falha(env, item.id, 'fidelidade', 'falta o ladrilho 3x1 ou a arte original');
+    return { item_id: item.id, de: item.estado, para: 'falhou_fidelidade', ok: false };
+  }
+
+  // A medição vem do runner. Se faltar, o julgamento não pode ser feito: sem os
+  // três critérios medidos o A11 seria só opinião.
+  const medicao: MedicaoFidelidade | null = item.medicao;
+  if (!medicao) {
+    await falha(env, item.id, 'fidelidade', 'o runner não gravou as medições da composição');
+    return { item_id: item.id, de: item.estado, para: 'falhou_fidelidade', ok: false };
+  }
+
+  // A resolução nativa é do worker (veio do Factory), não do browser — então
+  // sobrescreve o que o runner mandou.
+  const comNativa: MedicaoFidelidade = {
+    ...medicao,
+    arte_nativa:
+      item.arte_w && item.arte_h ? { w: item.arte_w, h: item.arte_h } : medicao.arte_nativa,
+  };
+
+  const original = await comoDataUrl(item.png_alta);
+  let fidelidade;
+  try {
+    fidelidade = await julgar(
+      env,
+      { originalUrl: original, ladrilhoUrl: ladrilho },
+      comNativa,
+      item.leitura,
+      item.id,
+    );
+  } catch (e) {
+    fidelidade = julgamentoPorFalha(comNativa, (e as Error)?.message || 'erro desconhecido');
+  }
+
+  if (fidelidade.veredito !== 'aprovado') {
+    const tentativas = item.tentativas + 1;
+    // Mesma regra do A5: duas reprovas e vai para gente. Reprovar de novo pelo
+    // mesmo motivo não melhora nada e queima chamada de visão.
+    if (tentativas >= TETO_TENTATIVAS) {
+      await atualiza(env, item.id, {
+        estado: 'aguardando_aprovacao',
+        fidelidade,
+        tentativas,
+        motivo_falha:
+          `A11 reprovou ${tentativas}x (nota ${fidelidade.nota_final}): ` +
+          `${fidelidade.problemas[0] || 'sem detalhe'}`,
+      });
+      return {
+        item_id: item.id,
+        de: item.estado,
+        para: 'aguardando_aprovacao',
+        ok: true,
+        detalhe: `A11 nota ${fidelidade.nota_final}, foi para humano`,
+      };
+    }
+    await atualiza(env, item.id, {
+      estado: 'lida',
+      fidelidade,
+      tentativas,
+      // O ajuste do A11 entra no mesmo canal que o do A5, para o A3 replanejar.
+      auditoria: item.auditoria
+        ? { ...item.auditoria, ajuste_sugerido: fidelidade.ajuste_sugerido }
+        : null,
+    });
+    return {
+      item_id: item.id,
+      de: item.estado,
+      para: 'lida',
+      ok: true,
+      detalhe: `A11 nota ${fidelidade.nota_final}, replanejando`,
+    };
+  }
+
+  await atualiza(env, item.id, { estado: 'julgada', fidelidade });
+  return {
+    item_id: item.id,
+    de: item.estado,
+    para: 'julgada',
+    ok: true,
+    detalhe: `A11 nota ${fidelidade.nota_final}`,
+  };
+}
+
+/**
+ * julgada -> aguardando_aprovacao. A6, A7, A8 e A9 em sequência.
  *
  * A7 roda ANTES do A8/A9 de propósito: não vale gastar copy numa arte que a
  * revisão de marca vai bloquear. E se o A7 cair, o item é bloqueado, não
@@ -388,6 +503,8 @@ export async function avancaItem(
       case 'composta':
         return await estagioAuditar(env, item);
       case 'auditada':
+        return await estagioJulgar(env, item);
+      case 'julgada':
         return await estagioFecharPacote(env, item);
       default:
         return null;

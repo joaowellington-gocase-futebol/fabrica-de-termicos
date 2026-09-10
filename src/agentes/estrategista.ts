@@ -12,7 +12,14 @@
  */
 
 import { chamarAgente, conf, listaStr, num, obj, str, umDe, bool } from '../core/aiproxy';
-import type { Env, EstiloComposicao, LeituraEstampa, Mascara, PlanoComposicao } from '../core/tipos';
+import type {
+  Env,
+  EstiloComposicao,
+  LeituraEstampa,
+  Mascara,
+  PlanoComposicao,
+  ZonaLogo,
+} from '../core/tipos';
 import { resumoLeitura, sistema } from './comum';
 
 const PAPEL = `Você é o ESTRATEGISTA DE COMPOSIÇÃO, um diretor de arte. Recebe a
@@ -38,7 +45,41 @@ flor com haste, um animal), true para elemento ornamental sem topo definido.
 
 Lembre que a arte é vista a distância e dá a volta no cilindro: prefira motivo
 maior a motivo pequeno demais, e evite densidade_alvo alta com escala grande ao
-mesmo tempo — vira massa sem respiro.`;
+mesmo tempo — vira massa sem respiro.
+
+## PRESERVAR A HIERARQUIA DA CAPINHA
+
+A leitura traz "hierarquia" e "arranjo". Respeita-los e o criterio numero 1 pelo
+qual esta composicao vai ser julgada depois: ela precisa PARECER a mesma arte da
+capinha, nao um padrao genarico feito com as mesmas pecas.
+
+Use este mapa como ponto de partida, e so saia dele com motivo no racional:
+- "uniforme"            -> "linear" (grade regular), ou "distribuido" se a
+                          densidade for baixa. NAO use "stickers": variar
+                          tamanho destroi justamente o que define esta arte.
+- "um_dominante"        -> "stickers", que aceita tamanhos diferentes.
+- "heroi_com_satelites" -> "localizada" quando o heroi e o assunto e nao
+                          sobrevive repetido; "stickers" quando da para repetir
+                          o conjunto heroi+satelites como unidade.
+- "escalonada"          -> "stickers".
+
+E o arranjo:
+- "grade"        -> "linear"
+- "espalhado"    -> "distribuido" ou "stickers"
+- "agrupado"     -> "stickers"
+- "centralizado" -> "localizada"
+- "moldura"      -> "distribuido"
+
+"rotacao_permitida" deve ser false sempre que a leitura disser "orientacao sim":
+girar uma flor com haste ou um animal deixa a arte de cabeca para baixo dando a
+volta na garrafa.
+
+## ZONA DA LOGO
+
+Quando a mascara informar uma zona proibida da logo Gocase, a composicao nao
+pode ter motivo importante ali. Aumente "margem_seguranca_pct" e escolha um
+estilo que deixe respiro naquela regiao; se a zona for central e o estilo pedido
+for "localizada", diga isso no racional.`;
 
 const SCHEMA = `{
   "estilo": "stickers" | "linear" | "distribuido" | "localizada",
@@ -61,20 +102,43 @@ export function estiloPorDensidade(densidade: string): EstiloComposicao {
   return 'stickers';
 }
 
+/**
+ * Estilo que preserva a hierarquia lida. E o fallback quando o A3 cai, e e
+ * tambem o mapa que o prompt do A3 recebe — os dois concordando de proposito.
+ */
+export function estiloPorHierarquia(leitura: LeituraEstampa): EstiloComposicao {
+  const { hierarquia, arranjo } = leitura.composicao;
+  if (arranjo === 'centralizado' || leitura.tipo === 'composicao_central') return 'localizada';
+  switch (hierarquia) {
+    case 'uniforme':
+      // Nunca stickers aqui: variar tamanho destroi o que define a arte.
+      return leitura.densidade === 'baixa' ? 'distribuido' : 'linear';
+    case 'heroi_com_satelites':
+      return 'localizada';
+    case 'um_dominante':
+    case 'escalonada':
+      return 'stickers';
+    default:
+      return estiloPorDensidade(leitura.densidade);
+  }
+}
+
 export function planoPadrao(leitura: LeituraEstampa): PlanoComposicao {
-  const central = leitura.tipo === 'composicao_central';
   return {
-    estilo: central ? 'localizada' : estiloPorDensidade(leitura.densidade),
+    estilo: estiloPorHierarquia(leitura),
     escala_motivos: 1,
     densidade_alvo: leitura.densidade === 'alta' ? 0.55 : leitura.densidade === 'baixa' ? 0.28 : 0.42,
     motivos_promover: leitura.motivos.filter((m) => m.papel === 'principal').map((m) => m.nome),
     motivos_descartar: [],
-    rotacao_permitida: false,
+    // Orientacao de leitura proibe rotacao: girar flor com haste deixa a arte
+    // de cabeca para baixo dando a volta na garrafa.
+    rotacao_permitida: !leitura.composicao.tem_orientacao,
     margem_seguranca_pct: 4,
-    racional: 'plano padrão pela densidade medida (A3 indisponível)',
+    racional: `plano padrao pela hierarquia ${leitura.composicao.hierarquia} (A3 indisponivel)`,
     confianca: 0.5,
   };
 }
+
 
 function faixa(v: unknown, min: number, max: number, padrao: number): number {
   const n = num(v, padrao);
@@ -105,8 +169,16 @@ export async function planejar(
   mascara: Mascara,
   itemId: number | null = null,
   ajuste: { estilo?: EstiloComposicao; escala?: number } | null = null,
+  zona: ZonaLogo | null = null,
 ): Promise<PlanoComposicao> {
   const razao = (mascara.w / mascara.h).toFixed(2);
+  const logo = zona?.disponivel
+    ? `\n\nZona proibida da logo Gocase: retangulo de ${zona.w}x${zona.h} px em ` +
+      `(${zona.x}, ${zona.y}). Nenhum motivo importante pode cair ali.`
+    : zona
+      ? `\n\nZona da logo: nao cadastrada para esta mascara (${zona.motivo}). ` +
+        `Nao ha restricao a aplicar.`
+      : '';
   const correcao = ajuste
     ? `\n\nATENÇÃO — esta é uma segunda tentativa. O auditor reprovou a composição
 anterior e sugeriu: ${JSON.stringify(ajuste)}. Leve a sugestão a sério e explique
@@ -123,7 +195,7 @@ no racional o que mudou em relação à tentativa anterior.`
         content:
           `Leitura da estampa (saída do A2):\n${resumoLeitura(leitura)}\n\n` +
           `Máscara alvo: ${mascara.produto} ${mascara.volumetria}, ` +
-          `${mascara.w}x${mascara.h} px (razão ${razao}:1).${correcao}\n\n` +
+          `${mascara.w}x${mascara.h} px (razão ${razao}:1).${logo}${correcao}\n\n` +
           `Devolva o plano em JSON.`,
       },
     ],

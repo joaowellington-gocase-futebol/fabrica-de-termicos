@@ -1,31 +1,32 @@
 /**
  * Acesso ao proxy de dados do GoDeploy (`env.PROXY_BASE_URL`).
  *
- * DUAS RESTRIÇÕES QUE MUDAM O DESENHO DA ESTEIRA, e que a doc original não
- * previa — leia antes de mexer aqui:
+ * O proxy aceita SQL: `POST /{db}/_query` com `{sql}`. Uma primeira versão
+ * deste arquivo usava a interface PostgREST (`GET /{db}/{schema}.{tabela}`) e
+ * agregava no worker por não haver GROUP BY — desnecessário. O padrão de SQL é
+ * o que o `mockup-studio` já usa em produção.
  *
- * 1. NÃO é SQL. É PostgREST, somente leitura. Não existe JOIN nem GROUP BY
- *    arbitrário. A "query do gap" virou: agregação no proxy quando ele aceita,
- *    e agregação no worker quando não aceita.
+ * DUAS COISAS QUE CONTINUAM VALENDO:
  *
- * 2. A autenticação é o COOKIE DO VISITANTE, repassado pelo worker. Um cron não
+ * 1. A autenticação é o COOKIE DO VISITANTE, repassado pelo worker. Um cron não
  *    tem cookie. Logo o Curador NÃO roda no cron: roda quando alguém logado
- *    pede (botão "Encher a fila") ou por chamada com cookie válido. O cron
- *    avança tudo o que depende só do AI Proxy, que usa secret e não cookie.
+ *    pede. O cron avança o que depende só do AI Proxy, que usa secret.
  *
- * Consequência prática: a fila não se enche sozinha às 6h da manhã. Ela se
- * enche quando um humano abre o painel, e daí em diante anda sozinha. Trocar
- * isso exige uma credencial de serviço para o datamart (METABASE_TOKEN ou
- * equivalente), que hoje não existe configurada.
+ * 2. O proxy corta a resposta em 1000 linhas SEM AVISAR. Toda consulta que pode
+ *    passar disso precisa de agregação ou paginação com ordenação total —
+ *    senão a resposta chega incompleta em silêncio.
  */
 
-import type { Candidata, Env, Mascara } from './tipos';
+import type { Candidata, Env, Mascara, ZonaLogo } from './tipos';
 
 /** Categoria de origem: é de capinha que saem as best-sellers a adaptar. */
 const CATEGORIA_CASE = 'Capinha de Celular';
 
 /** Sufixo que marca a versão térmica de uma estampa. Convenção do catálogo. */
 export const SUFIXO_TERMICO = '-termicos';
+
+/** Teto do proxy. Passar disso corta a resposta sem erro. */
+const TETO_LINHAS = 1000;
 
 /**
  * Acessórios e afins que aparecem na venda de "capinha" mas não são estampa
@@ -55,8 +56,7 @@ export function ehRuido(estampaKey: string): boolean {
  *
  * É heurística de partida, não verdade medida — e é DE PROPÓSITO que ela é
  * grosseira e visível aqui em vez de escondida num prompt. O A1 tem a palavra
- * final sobre prioridade; este número só ordena a lista que ele recebe. Quando
- * houver histórico de térmico vendido, isto vira regressão sobre dado real.
+ * final sobre prioridade; este número só ordena a lista que ele recebe.
  */
 const FATOR_TEMA: Record<string, number> = {
   florais: 1.15,
@@ -75,7 +75,7 @@ export function fatorDoTema(tema: string | null): number {
 }
 
 // ---------------------------------------------------------------------------
-// Cliente PostgREST
+// Cliente SQL
 // ---------------------------------------------------------------------------
 
 export class ErroDados extends Error {
@@ -88,155 +88,68 @@ export class ErroDados extends Error {
   }
 }
 
+/** Escapa aspas simples para interpolação em literal SQL. */
+const esc = (s: string) => String(s).replace(/'/g, "''");
+
 /**
- * GET no proxy, repassando o cookie do visitante.
- *
- * `cookie` vem do `Request` original. Sem ele o proxy devolve 401 — o que é o
- * comportamento correto e não um bug a contornar.
+ * Chaves de estampa e slugs vêm de fora (corpo de POST, querystring).
+ * Só passam se casarem com o formato do catálogo — nada de confiar no `esc()`
+ * sozinho quando dá para recusar a entrada.
  */
-async function proxyGet(
+const CHAVE_OK = /^[a-z0-9][a-z0-9._-]{0,120}$/i;
+
+export function chaveValida(k: string): boolean {
+  return CHAVE_OK.test(k);
+}
+
+type Banco = 'factory' | 'site' | 'datamart';
+
+async function sql(
   env: Env,
-  caminho: string,
-  consulta: string,
   cookie: string,
-): Promise<unknown[]> {
+  db: Banco,
+  consulta: string,
+): Promise<Record<string, unknown>[]> {
   if (!env.PROXY_BASE_URL) throw new ErroDados('PROXY_BASE_URL não injetado no worker.', 500);
-  const url = `${env.PROXY_BASE_URL}/${caminho}?${consulta}`;
-  const res = await fetch(url, { headers: { Cookie: cookie } });
+  const res = await fetch(`${env.PROXY_BASE_URL}/${db}/_query`, {
+    method: 'POST',
+    headers: { Cookie: cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ sql: consulta }),
+  });
   if (res.status === 401) {
     throw new ErroDados('não autenticado no proxy de dados (o cron não tem cookie).', 401);
   }
-  if (!res.ok) {
-    throw new ErroDados(`proxy ${res.status} em ${caminho}: ${(await res.text()).slice(0, 240)}`, res.status);
-  }
-  const data = await res.json();
-  return Array.isArray(data) ? data : [data];
-}
-
-function isoDiasAtras(dias: number): string {
-  return new Date(Date.now() - dias * 86_400_000).toISOString().slice(0, 10);
-}
-
-// ---------------------------------------------------------------------------
-// Estágio 0 — Curador (SQL/PostgREST, sem IA)
-// ---------------------------------------------------------------------------
-
-interface Agregado {
-  estampa_key: string;
-  unidades: number;
-  receita: number;
-}
-
-/**
- * Soma unidades e receita por estampa na janela.
- *
- * Tenta a sintaxe de agregação do PostgREST (`unidades.sum()`), que resolve tudo
- * numa requisição. Se o servidor não tiver agregação habilitada, cai para
- * páginas de linhas cruas somadas aqui. Os dois caminhos existem porque não é
- * possível saber a configuração do proxy sem chamar — e o modo usado é
- * devolvido junto, para aparecer no /api/health em vez de virar mistério.
- */
-async function agregaPorEstampa(
-  env: Env,
-  janelaDias: number,
-  cookie: string,
-): Promise<{ dados: Agregado[]; modo: 'agregado' | 'paginado' }> {
-  const desde = isoDiasAtras(janelaDias);
-  const base = `data=gte.${desde}&categoria=eq.${encodeURIComponent(CATEGORIA_CASE)}`;
-
+  const texto = await res.text();
+  if (!res.ok) throw new ErroDados(`${db} HTTP ${res.status}: ${texto.slice(0, 240)}`, res.status);
   try {
-    const linhas = (await proxyGet(
-      env,
-      'datamart/gold.product_estampa_daily',
-      `${base}&select=estampa_key,unidades.sum(),receita.sum()&limit=400`,
-      cookie,
-    )) as Record<string, unknown>[];
+    return (JSON.parse(texto).rows as Record<string, unknown>[]) || [];
+  } catch {
+    throw new ErroDados(`${db} devolveu resposta não-JSON`, 502);
+  }
+}
 
-    const dados = linhas
-      .map((r) => ({
-        estampa_key: String(r.estampa_key || ''),
-        // O PostgREST preserva o nome da coluna agregada; versões antigas
-        // devolvem "sum". Preferir o nome da coluna evita ler o total errado
-        // quando duas colunas são somadas na mesma consulta.
-        unidades: Number(r['unidades'] ?? r.sum ?? 0),
-        receita: Number(r['receita'] ?? 0),
-      }))
-      .filter((r) => r.estampa_key);
-
-    // Agregação habilitada mas com nomes de campo diferentes do esperado
-    // devolveria zeros silenciosos. Melhor cair para o caminho paginado.
-    if (dados.length && dados.some((d) => d.unidades > 0)) return { dados, modo: 'agregado' };
+/** Consulta que pode falhar sem derrubar o estágio. 401 sempre propaga. */
+async function sqlOpcional(
+  env: Env,
+  cookie: string,
+  db: Banco,
+  consulta: string,
+): Promise<Record<string, unknown>[]> {
+  try {
+    return await sql(env, cookie, db, consulta);
   } catch (e) {
     if ((e as ErroDados).status === 401) throw e;
-    console.log('[curador] agregação no proxy indisponível:', (e as Error)?.message);
+    console.log(`[dados] ${db} falhou:`, (e as Error)?.message);
+    return [];
   }
-
-  // Fallback: páginas de linhas cruas, somadas no worker.
-  const soma = new Map<string, Agregado>();
-  const porPagina = 1000;
-  const maxPaginas = 40; // teto de CPU: 40k linhas é o limite sensato aqui.
-  for (let p = 0; p < maxPaginas; p++) {
-    const linhas = (await proxyGet(
-      env,
-      'datamart/gold.product_estampa_daily',
-      `${base}&select=estampa_key,unidades,receita&order=estampa_key&limit=${porPagina}&offset=${p * porPagina}`,
-      cookie,
-    )) as Record<string, unknown>[];
-    for (const r of linhas) {
-      const k = String(r.estampa_key || '');
-      if (!k) continue;
-      const atual = soma.get(k) || { estampa_key: k, unidades: 0, receita: 0 };
-      atual.unidades += Number(r.unidades || 0);
-      atual.receita += Number(r.receita || 0);
-      soma.set(k, atual);
-    }
-    if (linhas.length < porPagina) break;
-  }
-  return { dados: [...soma.values()], modo: 'paginado' };
 }
 
-/** Estampas que JÁ têm versão térmica publicada — o lado direito do gap. */
-async function jaTemTermico(env: Env, cookie: string): Promise<Set<string>> {
-  const linhas = (await proxyGet(
-    env,
-    'factory/public.products',
-    `select=engine_identifier&engine_identifier=like.*${SUFIXO_TERMICO}&active=is.true&deleted_at=is.null&limit=5000`,
-    cookie,
-  )) as Record<string, unknown>[];
-
-  const set = new Set<string>();
-  for (const r of linhas) {
-    const id = String(r.engine_identifier || '');
-    if (id.endsWith(SUFIXO_TERMICO)) set.add(id.slice(0, -SUFIXO_TERMICO.length));
-  }
-  return set;
-}
-
-/** Metadados da estampa: nome, tema, licença, is_clear. */
-async function dimEstampas(
-  env: Env,
-  chaves: string[],
-  cookie: string,
-): Promise<Map<string, Record<string, unknown>>> {
-  const mapa = new Map<string, Record<string, unknown>>();
-  // `in.()` numa URL tem limite de tamanho; 120 chaves por lote é seguro.
-  const lote = 120;
-  for (let i = 0; i < chaves.length; i += lote) {
-    const parte = chaves.slice(i, i + lote).map((k) => `"${k.replace(/"/g, '')}"`);
-    const linhas = (await proxyGet(
-      env,
-      'datamart/gold.dim_estampa',
-      `select=estampa_key,estampa_nome,licenca,is_clear,tema,first_seen_at&estampa_key=in.(${parte.join(',')})`,
-      cookie,
-    )) as Record<string, unknown>[];
-    for (const r of linhas) mapa.set(String(r.estampa_key), r);
-  }
-  return mapa;
-}
+// ---------------------------------------------------------------------------
+// Estágio 0 — Curador (SQL, sem IA)
+// ---------------------------------------------------------------------------
 
 export interface ResultadoCuradoria {
   candidatas: Candidata[];
-  modo: 'agregado' | 'paginado';
   total_analisadas: number;
   descartadas: { estampa_key: string; motivo: string }[];
 }
@@ -250,6 +163,10 @@ export interface ResultadoCuradoria {
  * Nunca usar `gold.estampa_opportunity`: `indice_transferencia` é 0 em todas as
  * linhas, `receita_potencial_30d` é constante e `estampa_key` vem poluído com
  * volumetria. Ver docs/MAPA-ATIVOS.md secao 6 — já custou meio dia.
+ *
+ * O gap é fechado em duas consultas em bancos diferentes (o datamart não conhece
+ * `products`), com o anti-join feito aqui. Cada consulta é agregada, então
+ * nenhuma das duas encosta no teto de 1000 linhas.
  */
 export async function curar(
   env: Env,
@@ -257,56 +174,80 @@ export async function curar(
   janelaDias = 90,
   limite = 30,
 ): Promise<ResultadoCuradoria> {
-  const { dados, modo } = await agregaPorEstampa(env, janelaDias, cookie);
-  const ordenado = dados.sort((a, b) => b.unidades - a.unidades);
-  const descartadas: { estampa_key: string; motivo: string }[] = [];
+  const dias = Math.min(365, Math.max(1, Math.round(janelaDias)));
 
-  const semRuido = ordenado.filter((d) => {
-    if (ehRuido(d.estampa_key)) {
-      descartadas.push({ estampa_key: d.estampa_key, motivo: 'acessório, não é estampa' });
-      return false;
-    }
-    return true;
-  });
-
-  const comTermico = await jaTemTermico(env, cookie);
-  const gap = semRuido.filter((d) => {
-    if (comTermico.has(d.estampa_key)) {
-      descartadas.push({ estampa_key: d.estampa_key, motivo: 'já tem versão térmica' });
-      return false;
-    }
-    return true;
-  });
-
-  const topo = gap.slice(0, limite * 3);
-  const dim = await dimEstampas(
+  const vendas = await sql(
     env,
-    topo.map((d) => d.estampa_key),
     cookie,
+    'datamart',
+    `SELECT d.estampa_key,
+            SUM(d.unidades) AS unidades,
+            SUM(d.receita)  AS receita,
+            MAX(e.estampa_nome) AS nome,
+            MAX(e.tema)         AS tema,
+            MAX(e.licenca)      AS licenca,
+            BOOL_OR(COALESCE(e.is_clear, false)) AS is_clear
+       FROM gold.product_estampa_daily d
+       LEFT JOIN gold.dim_estampa e ON e.estampa_key = d.estampa_key
+      WHERE d.data >= CURRENT_DATE - INTERVAL '${dias} days'
+        AND d.categoria = '${esc(CATEGORIA_CASE)}'
+      GROUP BY d.estampa_key
+      HAVING SUM(d.unidades) > 0
+      ORDER BY SUM(d.unidades) DESC
+      LIMIT 400`,
   );
 
+  const comTermico = new Set(
+    (
+      await sql(
+        env,
+        cookie,
+        'factory',
+        `SELECT DISTINCT LEFT(engine_identifier, LENGTH(engine_identifier) - ${SUFIXO_TERMICO.length}) AS base
+           FROM products
+          WHERE deleted_at IS NULL
+            AND engine_identifier LIKE '%${esc(SUFIXO_TERMICO)}'
+          LIMIT 900`,
+      )
+    ).map((r) => String(r.base || '')),
+  );
+
+  const descartadas: { estampa_key: string; motivo: string }[] = [];
   const candidatas: Candidata[] = [];
-  for (const d of topo) {
-    const meta = dim.get(d.estampa_key);
-    if (meta?.is_clear === true) {
-      descartadas.push({ estampa_key: d.estampa_key, motivo: 'is_clear' });
+
+  for (const r of vendas) {
+    const key = String(r.estampa_key || '');
+    if (!key) continue;
+
+    if (ehRuido(key)) {
+      descartadas.push({ estampa_key: key, motivo: 'acessório, não é estampa' });
       continue;
     }
-    const tema = (meta?.tema as string) ?? null;
+    if (comTermico.has(key)) {
+      descartadas.push({ estampa_key: key, motivo: 'já tem versão térmica' });
+      continue;
+    }
+    if (r.is_clear === true) {
+      descartadas.push({ estampa_key: key, motivo: 'is_clear' });
+      continue;
+    }
+
+    const tema = (r.tema as string) ?? null;
+    const unidades = Number(r.unidades || 0);
     candidatas.push({
-      estampa_key: d.estampa_key,
-      nome: String(meta?.estampa_nome || d.estampa_key),
+      estampa_key: key,
+      nome: String(r.nome || key),
       tema,
-      licenca: (meta?.licenca as string) ?? null,
-      unidades: d.unidades,
-      receita: d.receita,
-      score: d.unidades * fatorDoTema(tema),
+      licenca: (r.licenca as string) ?? null,
+      unidades,
+      receita: Number(r.receita || 0),
+      score: unidades * fatorDoTema(tema),
     });
     if (candidatas.length >= limite) break;
   }
 
   candidatas.sort((a, b) => b.score - a.score);
-  return { candidatas, modo, total_analisadas: dados.length, descartadas: descartadas.slice(0, 60) };
+  return { candidatas, total_analisadas: vendas.length, descartadas: descartadas.slice(0, 60) };
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +262,7 @@ export const HOSTS_LIBERADOS = [
   'custom-case-images.s3.amazonaws.com',
   'ik.imagekit.io',
   'static-goengines.gocase.com.br',
+  'static-factory.gocase.com.br',
   'catalog-api-v2.gocase.com.br',
 ];
 
@@ -336,108 +278,99 @@ export interface ArteComOrigem {
   png_alta: string;
   material: string | null;
   engine_identifier: string;
-  origem: 'factory' | 'site' | 'catalog';
+  /** Qual etapa da cascata respondeu — diagnóstico, não decoração. */
+  origem: 'factory' | 'site';
+  /** Resolução nativa da arte na capinha. Entra no critério 4 do A11. */
+  arte_w: number | null;
+  arte_h: number | null;
 }
 
 /**
- * Estágio 1. Acha o PNG em alta da estampa: Factory -> Site -> Catalog.
+ * Estágio 1. Acha o PNG em alta da estampa: Factory -> Site.
  *
  * Devolve `origem` porque quando a arte vem errada a primeira pergunta é sempre
- * "de onde ela veio" — e sem esse campo a resposta é uma escavação.
+ * "de onde ela veio" — e sem esse campo a resposta é uma escavação. Devolve
+ * também a resolução nativa (`stamps.width/height`), que é o teto de qualidade
+ * do que o motor pode ampliar sem pixelar.
  */
 export async function resolverArte(
   env: Env,
   estampaKey: string,
   cookie: string,
 ): Promise<ArteComOrigem | null> {
-  const candidatosId = [`${estampaKey}-case`, estampaKey];
+  if (!chaveValida(estampaKey)) throw new ErroDados(`estampa_key inválida: ${estampaKey}`, 400);
 
-  // 1. Factory: products -> stamps.image + materials.slug
-  for (const ident of candidatosId) {
-    try {
-      const prods = (await proxyGet(
-        env,
-        'factory/public.products',
-        `select=id,engine_identifier,sku&engine_identifier=eq.${encodeURIComponent(ident)}&deleted_at=is.null&limit=1`,
-        cookie,
-      )) as Record<string, unknown>[];
-      if (!prods.length) continue;
+  // Factory: products -> stamps.image + materials.slug, numa consulta só.
+  const linhas = await sqlOpcional(
+    env,
+    cookie,
+    'factory',
+    `SELECT p.engine_identifier, s.image, s.width, s.height, m.slug AS material
+       FROM products p
+       JOIN stamps s ON s.product_id = p.id AND s.image IS NOT NULL
+       LEFT JOIN available_product_materials apm
+              ON apm.product_id = p.id AND apm.deleted_at IS NULL
+       LEFT JOIN materials m ON m.id = apm.material_id AND m.deleted_at IS NULL
+      WHERE p.deleted_at IS NULL
+        AND p.engine_identifier IN ('${esc(estampaKey)}-case', '${esc(estampaKey)}')
+        AND m.slug IS NOT NULL
+      ORDER BY s.width DESC NULLS LAST
+      LIMIT 1`,
+  );
 
-      const produtoId = Number(prods[0].id);
-      const stamps = (await proxyGet(
-        env,
-        'factory/public.stamps',
-        `select=image,width,height&product_id=eq.${produtoId}&image=not.is.null&order=width.desc&limit=1`,
-        cookie,
-      )) as Record<string, unknown>[];
-      if (!stamps.length) continue;
-
-      const img = String(stamps[0].image || '').replace(/\.[a-z]+$/i, '');
-      const mats = (await proxyGet(
-        env,
-        'factory/public.available_product_materials',
-        `select=material_id&product_id=eq.${produtoId}&deleted_at=is.null&limit=1`,
-        cookie,
-      ).catch(() => [])) as Record<string, unknown>[];
-
-      let materialSlug: string | null = null;
-      if (mats.length) {
-        const m = (await proxyGet(
-          env,
-          'factory/public.materials',
-          `select=slug&id=eq.${Number(mats[0].material_id)}&limit=1`,
-          cookie,
-        ).catch(() => [])) as Record<string, unknown>[];
-        materialSlug = m.length ? String(m[0].slug || '') || null : null;
-      }
-
-      if (img && materialSlug) {
-        return {
-          png_alta: `${HOST_CATALOG}/${materialSlug}/${ident}/${img}.png`,
-          material: materialSlug,
-          engine_identifier: ident,
-          origem: 'factory',
-        };
-      }
-    } catch (e) {
-      if ((e as ErroDados).status === 401) throw e;
-      console.log('[resolvedor] factory falhou para', ident, (e as Error)?.message);
+  if (linhas.length) {
+    const r = linhas[0];
+    const img = String(r.image || '').replace(/\.[a-z]+$/i, '');
+    const ident = String(r.engine_identifier || '');
+    const material = String(r.material || '');
+    if (img && material) {
+      return {
+        png_alta: `${HOST_CATALOG}/${material}/${ident}/${img}.png`,
+        material,
+        engine_identifier: ident,
+        origem: 'factory',
+        arte_w: r.width === null ? null : Number(r.width),
+        arte_h: r.height === null ? null : Number(r.height),
+      };
     }
   }
 
-  // 2. Site: velociraptor_products.image_br, cortando no `stamp=`
-  try {
-    const linhas = (await proxyGet(
-      env,
-      'site/public.velociraptor_products',
-      `select=image_br&image_br=like.*stamp=${estampaKey}*&limit=1`,
-      cookie,
-    )) as Record<string, unknown>[];
-    if (linhas.length) {
-      const bruto = String(linhas[0].image_br || '');
-      const caminho = bruto.split('stamp=')[1]?.split('&')[0];
-      if (caminho) {
-        const url = `${HOST_S3}/${caminho}`;
-        if (hostLiberado(url)) {
-          return { png_alta: url, material: null, engine_identifier: `${estampaKey}-case`, origem: 'site' };
-        }
+  // Site: velociraptor_products.image_br, cortando no `stamp=`
+  const doSite = await sqlOpcional(
+    env,
+    cookie,
+    'site',
+    `SELECT image_br FROM velociraptor_products
+      WHERE image_br LIKE '%stamp=${esc(estampaKey)}%'
+      LIMIT 1`,
+  );
+  if (doSite.length) {
+    const bruto = String(doSite[0].image_br || '');
+    const caminho = bruto.split('stamp=')[1]?.split('&')[0];
+    if (caminho) {
+      const url = `${HOST_S3}/${caminho}`;
+      if (hostLiberado(url)) {
+        return {
+          png_alta: url,
+          material: null,
+          engine_identifier: `${estampaKey}-case`,
+          origem: 'site',
+          arte_w: null,
+          arte_h: null,
+        };
       }
     }
-  } catch (e) {
-    if ((e as ErroDados).status === 401) throw e;
-    console.log('[resolvedor] site falhou:', (e as Error)?.message);
   }
 
   return null;
 }
 
 // ---------------------------------------------------------------------------
-// Máscaras — px reais, vindos de factory materials.width/height
+// Máscaras e zona da logo
 // ---------------------------------------------------------------------------
 
 /**
- * Máscaras de produção. Números vindos de `materials.width/height` do Factory
- * e conferidos no `gerador-de-adaptacoes`.
+ * Máscaras de produção. Números vindos de `materials.width/height` do Factory.
  *
  * Para térmico cilíndrico a máscara é o retângulo da área impressa desenrolada;
  * não existe (nem é preciso) PSD de máscara. NÃO inventar dimensão aqui.
@@ -458,3 +391,115 @@ export const MASCARAS: Mascara[] = [
 
 /** Primeiro corte do projeto: Garrafa Fresh 650ml. */
 export const MASCARA_PADRAO: Mascara = MASCARAS[0];
+
+/**
+ * Zona de segurança da logo Gocase, lida do Factory.
+ *
+ * ATENÇÃO — ESTADO REAL DO DADO, medido em 2026-09-10 contra o Factory:
+ *
+ *   Para os térmicos do primeiro corte (garrafafresh650/950, flippro,
+ *   copocerveja470) as quatro colunas — `logo_pos_x`, `logo_pos_y`,
+ *   `logo_size`, `logo_border_size` — vêm **NULL**, e `applies_custom_logo` é
+ *   **false**. Nos MagSafe vêm **zeradas**. As únicas linhas com valor real são
+ *   as garrafas Kids (`garrafakids460`: 1184/1303, size 412, border 199 numa
+ *   máscara 2754x1335 — logo embaixo, ao centro).
+ *
+ * Ou seja: a margem de segurança da logo NÃO está cadastrada no Factory para os
+ * materiais que este projeto ataca. Ela existe na estrutura, não nos dados.
+ *
+ * Esta função é o mecanismo, pronto para o dia em que o cadastro for
+ * preenchido: quando há valor, devolve a zona; quando não há, devolve `null` e
+ * o critério 5 do A11 responde "não verificável" em vez de "aprovado". Um
+ * critério de compliance que passa por falta de dado não é critério.
+ *
+ * A margem é o retângulo da logo dilatado por `logo_border_size`, que é a folga
+ * cadastrada em volta dela.
+ */
+export async function zonaLogo(
+  env: Env,
+  cookie: string,
+  materialSlug: string,
+): Promise<ZonaLogo> {
+  if (!chaveValida(materialSlug)) {
+    return { disponivel: false, motivo: `slug de material inválido: ${materialSlug}` };
+  }
+
+  const linhas = await sqlOpcional(
+    env,
+    cookie,
+    'factory',
+    `SELECT width, height, logo_pos_x, logo_pos_y, logo_size, logo_border_size,
+            applies_custom_logo
+       FROM materials
+      WHERE deleted_at IS NULL AND slug = '${esc(materialSlug)}'
+      LIMIT 1`,
+  );
+
+  if (!linhas.length) {
+    return { disponivel: false, motivo: `material ${materialSlug} não encontrado no Factory` };
+  }
+
+  const r = linhas[0];
+  const px = r.logo_pos_x === null || r.logo_pos_x === undefined ? null : Number(r.logo_pos_x);
+  const py = r.logo_pos_y === null || r.logo_pos_y === undefined ? null : Number(r.logo_pos_y);
+  const size = r.logo_size === null || r.logo_size === undefined ? null : Number(r.logo_size);
+  const borda = Number(r.logo_border_size || 0);
+
+  if (px === null || py === null || size === null) {
+    return {
+      disponivel: false,
+      motivo:
+        `o Factory não tem logo_pos_x/logo_pos_y/logo_size para ${materialSlug} ` +
+        `(vêm NULL). A margem da logo não está cadastrada para este material.`,
+    };
+  }
+  if (size <= 0) {
+    return {
+      disponivel: false,
+      motivo:
+        `o Factory tem logo_size = ${size} para ${materialSlug} — cadastro zerado, ` +
+        `não é margem real.`,
+    };
+  }
+
+  return {
+    disponivel: true,
+    x: Math.max(0, px - borda),
+    y: Math.max(0, py - borda),
+    w: size + borda * 2,
+    h: size + borda * 2,
+    logo: { x: px, y: py, size },
+    borda,
+    aplica_logo: r.applies_custom_logo === true,
+    material: materialSlug,
+  };
+}
+
+/** Máscara real do material, direto do Factory, em vez da tabela estática. */
+export async function mascaraDoMaterial(
+  env: Env,
+  cookie: string,
+  materialSlug: string,
+): Promise<Mascara | null> {
+  if (!chaveValida(materialSlug)) return null;
+  const linhas = await sqlOpcional(
+    env,
+    cookie,
+    'factory',
+    `SELECT slug, name, width, height FROM materials
+      WHERE deleted_at IS NULL AND slug = '${esc(materialSlug)}'
+        AND width IS NOT NULL AND height IS NOT NULL
+      LIMIT 1`,
+  );
+  if (!linhas.length) return null;
+  const r = linhas[0];
+  return {
+    produto: String(r.name || materialSlug),
+    volumetria: '',
+    w: Number(r.width),
+    h: Number(r.height),
+    material: materialSlug,
+  };
+}
+
+export { TETO_LINHAS };

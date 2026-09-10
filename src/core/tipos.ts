@@ -81,6 +81,30 @@ export interface Mascara {
   material?: string;
 }
 
+/**
+ * Zona proibida da logo Gocase na máscara, em px.
+ *
+ * Lida de `factory materials` (logo_pos_x/y, logo_size, logo_border_size). O
+ * campo `disponivel` existe porque, para os térmicos do primeiro corte, essas
+ * colunas vêm NULL — ver `zonaLogo()` em core/dados.ts. Quando o dado falta, o
+ * critério de margem responde "não verificável", nunca "aprovado".
+ */
+export type ZonaLogo =
+  | { disponivel: false; motivo: string }
+  | {
+      disponivel: true;
+      /** Retângulo proibido: a logo dilatada pela folga cadastrada. */
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      /** A logo em si, sem a folga. */
+      logo: { x: number; y: number; size: number };
+      borda: number;
+      aplica_logo: boolean;
+      material: string;
+    };
+
 // ---------------------------------------------------------------------------
 // Saídas de agente — todas carregam confianca
 // ---------------------------------------------------------------------------
@@ -109,12 +133,47 @@ export interface Motivo {
   nome: string;
   contagem_aprox: number;
   papel: 'principal' | 'secundario' | 'ornamento';
+  /**
+   * Tamanho do motivo em relação ao MAIOR motivo da arte, de 0 a 1.
+   *
+   * É o que permite ao compositor preservar a hierarquia da capinha em vez de
+   * achatar tudo no mesmo tamanho. O maior motivo é sempre 1.
+   */
+  tamanho_relativo: number;
+}
+
+/**
+ * Como os elementos se relacionam entre si na capinha.
+ *
+ * Sem isto o compositor trata toda arte como padrão uniforme, e uma composição
+ * com um elemento herói cercado de satélites sai como uma grade de iguais —
+ * que é outra arte. É a entrada do critério 1 do A11 (semelhança com a
+ * composição da capinha).
+ */
+export interface Composicao {
+  /**
+   * `uniforme`            todos os elementos do mesmo tamanho e peso (poá, oncinha)
+   * `um_dominante`        um elemento claramente maior, os outros o acompanham
+   * `heroi_com_satelites` um elemento central em destaque e outros ao redor
+   * `escalonada`          vários tamanhos em degradê, sem um dono único
+   */
+  hierarquia: 'uniforme' | 'um_dominante' | 'heroi_com_satelites' | 'escalonada';
+  /** Nome do motivo dominante, quando existe um. */
+  elemento_principal: string | null;
+  /** Quantas vezes o maior motivo é maior que o menor. 1 = todos iguais. */
+  proporcao_maior_menor: number;
+  /** Como os elementos ocupam o espaço. */
+  arranjo: 'grade' | 'espalhado' | 'agrupado' | 'centralizado' | 'moldura';
+  /** A arte tem direção de leitura (topo/base definidos)? */
+  tem_orientacao: boolean;
 }
 export interface LeituraEstampa extends SaidaAgente {
   tipo: 'motivos_isolados' | 'fundo_continuo' | 'misto' | 'composicao_central';
   separavel: boolean;
   fundo: { tipo: 'solido' | 'textura' | 'transparente'; cor: string };
   motivos: Motivo[];
+  /** A relação entre os elementos, não só a lista deles. */
+  composicao: Composicao;
   paleta: string[];
   estilo: string;
   densidade: 'baixa' | 'media' | 'alta';
@@ -210,6 +269,81 @@ export interface Supervisao extends SaidaAgente {
   resumo_dia: string;
 }
 
+/**
+ * A11 — Juiz de Fidelidade: medições determinísticas.
+ *
+ * Três dos cinco critérios são MEDIDOS, não julgados, e por isso vivem aqui e
+ * não na saída do modelo. Um agente que "acha" que a resolução está boa é pior
+ * que uma conta: a conta não tem variância.
+ */
+export interface MedicaoFidelidade {
+  /** Critério 2. Linhas de descontinuidade na emenda. 0 = fecha. */
+  erro_costura_px: number;
+  /**
+   * Critério 4. Maior fator de ampliação aplicado a algum recorte.
+   *
+   * 1 = desenhado no tamanho nativo. 2 = dobrado, ou seja, cada pixel da arte
+   * original virou 4 na impressão. Acima de `TETO_AMPLIACAO` pixela.
+   */
+  ampliacao_maxima: number;
+  /** Qual recorte puxou a pior ampliação — para saber onde olhar. */
+  ampliacao_pior_camada: string | null;
+  /** Resolução nativa da arte na capinha, quando o Factory informa. */
+  arte_nativa: { w: number; h: number } | null;
+  /**
+   * Critério 5. `null` quando a zona da logo não está cadastrada no Factory —
+   * que é o caso de todos os térmicos do primeiro corte hoje.
+   */
+  invade_logo: {
+    invade: boolean;
+    /** Fração da zona proibida coberta por arte, de 0 a 1. */
+    cobertura: number;
+    colocacoes_invasoras: number;
+  } | null;
+  /** Por que a checagem de logo não pôde ser feita, quando não pôde. */
+  logo_indisponivel: string | null;
+  /** Contexto para o julgamento do modelo. */
+  camadas: number;
+  colocacoes: number;
+  /** Composição saiu sem rapport (arte de fundo contínuo). */
+  sem_rapport: boolean;
+}
+
+/** Nota de um critério, do A11. */
+export interface NotaCriterio {
+  nota: number;
+  /** `medido` vem de conta; `julgado` vem do modelo. */
+  fonte: 'medido' | 'julgado';
+  observacao: string;
+}
+
+/**
+ * A11 — Juiz de Fidelidade. A última porta antes do humano.
+ *
+ * Os cinco critérios do pedido, nesta ordem:
+ *   1. semelhança com a composição da capinha  (julgado)
+ *   2. rapport encaixa                          (medido)
+ *   3. recorte dos elementos é coerente         (julgado)
+ *   4. respeita a resolução da case             (medido)
+ *   5. respeita a margem da logo                (medido, quando há dado)
+ */
+export interface Fidelidade extends SaidaAgente {
+  criterios: {
+    semelhanca_composicao: NotaCriterio;
+    rapport: NotaCriterio;
+    coerencia_recorte: NotaCriterio;
+    resolucao: NotaCriterio;
+    margem_logo: NotaCriterio;
+  };
+  /** Média ponderada, 0 a 10. */
+  nota_final: number;
+  veredito: 'aprovado' | 'ajustar' | 'reprovado';
+  /** O que reprovou, em ordem de gravidade. */
+  problemas: string[];
+  ajuste_sugerido: { estilo?: EstiloComposicao; escala?: number } | null;
+  medicao: MedicaoFidelidade;
+}
+
 // ---------------------------------------------------------------------------
 // Fila — a esteira é uma máquina de estados, não um agente conversacional
 // ---------------------------------------------------------------------------
@@ -226,6 +360,7 @@ export const ESTADOS = [
   'separada',
   'composta',
   'auditada',
+  'julgada',
   'nomeada',
   'aguardando_aprovacao',
   'aprovada',
@@ -267,6 +402,20 @@ export interface ItemFila {
   plano: PlanoComposicao | null;
   segmentacao: RevisaoSegmentacao | null;
   auditoria: Auditoria | null;
+  /** A11 — o juiz dos cinco critérios. */
+  fidelidade: Fidelidade | null;
+  /**
+   * As medições determinísticas, gravadas pelo runner ANTES de o A11 rodar.
+   *
+   * Ficam numa coluna própria porque quem mede (o browser) e quem julga (o
+   * worker) são runtimes diferentes, em requisições diferentes.
+   */
+  medicao: MedicaoFidelidade | null;
+  /** Zona da logo lida do Factory no momento em que a arte foi resolvida. */
+  zona_logo: ZonaLogo | null;
+  /** Resolução nativa da arte na capinha (factory stamps.width/height). */
+  arte_w: number | null;
+  arte_h: number | null;
   cor: EscolhaCor | null;
   marca: RevisaoMarca | null;
   nomeacao: Nomeacao | null;

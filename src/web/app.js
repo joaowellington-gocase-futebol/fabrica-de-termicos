@@ -11,7 +11,7 @@
  * é a consequência de o worker não ter Canvas API. Ver docs/ARQUITETURA.md.
  */
 
-import { processaItem, paraDataUrl } from '/motor.js';
+import { processaItem } from '/motor.js';
 
 const AGENTES = [
   ['A1', 'portfólio'],
@@ -23,6 +23,7 @@ const AGENTES = [
   ['A7', 'marca'],
   ['A8', 'nome'],
   ['A9', 'copy'],
+  ['A11', 'fidelidade'],
 ];
 
 const ESTADO_ROTULO = {
@@ -32,6 +33,7 @@ const ESTADO_ROTULO = {
   planejada: ['warn', 'esperando o motor'],
   composta: ['acc', 'composta'],
   auditada: ['acc', 'auditada'],
+  julgada: ['acc', 'aprovada pelo A11'],
   aguardando_aprovacao: ['ok', 'aguardando você'],
   aprovada: ['ok', 'aprovada'],
   cadastrada: ['ok', 'cadastrada'],
@@ -126,7 +128,12 @@ function pintaPainel(m, contagens) {
     ],
     [esperando, 'esperando você', ''],
     [noMotor, 'esperando o motor', noMotor && !RUNNER_LIGADO ? 'ligue o motor gráfico' : ''],
-    [m.nota_media === null ? '—' : m.nota_media.toFixed(1), 'nota média do A5', ''],
+    [m.nota_media === null ? '—' : m.nota_media.toFixed(1), 'nota média do A5', 'costura e composição'],
+    [
+      m.fidelidade_media === null ? '—' : m.fidelidade_media.toFixed(1),
+      'fidelidade (A11)',
+      'semelhança com a capinha',
+    ],
     [
       m.costura_zero_pct === null ? '—' : Math.round(m.costura_zero_pct) + '%',
       'com costura zero',
@@ -190,6 +197,7 @@ function valorAgente(it, k) {
     case 'A7': return it.marca ? (it.marca.bloqueia ? 'veto' : 'limpo') : '—';
     case 'A8': return it.nomeacao ? 'ok' : '—';
     case 'A9': return it.copy ? 'ok' : '—';
+    case 'A11': return it.fidelidade ? String(it.fidelidade.nota_final) : '—';
     default: return '—';
   }
 }
@@ -238,6 +246,52 @@ function pintaCard(dados) {
         `</ul></div>`,
     );
   }
+  if (it.fidelidade) {
+    const f = it.fidelidade;
+    const NOMES = {
+      semelhanca_composicao: '1. semelhança com a capinha',
+      rapport: '2. rapport encaixa',
+      coerencia_recorte: '3. recorte coerente',
+      resolucao: '4. resolução da case',
+      margem_logo: '5. margem da logo',
+    };
+    const linhas = Object.entries(NOMES)
+      .map(([k, rotulo]) => {
+        const c = f.criterios[k];
+        if (!c) return '';
+        const cor = c.nota >= 7 ? 'var(--ok)' : c.nota >= 5 ? 'var(--warn)' : 'var(--crit)';
+        // `medido` vs `julgado` fica visível de propósito: saber se o número
+        // veio de conta ou de modelo muda o quanto se confia nele.
+        return (
+          `<tr><td>${escapa(rotulo)}</td>` +
+          `<td class="mono" style="color:${cor};font-weight:600">${c.nota}</td>` +
+          `<td><span class="chip">${escapa(c.fonte)}</span></td>` +
+          `<td style="color:var(--ink-2)">${escapa(c.observacao)}</td></tr>`
+        );
+      })
+      .join('');
+    const corV =
+      f.veredito === 'aprovado' ? 'ok' : f.veredito === 'ajustar' ? 'warn' : 'crit';
+    blocos.push(
+      `<div class="bloco"><b>A11 · juiz de fidelidade</b>` +
+        `<div style="margin-bottom:6px">nota final <b class="mono">${f.nota_final}</b> ` +
+        `<span class="chip ${corV}">${escapa(f.veredito)}</span></div>` +
+        `<table class="log"><tr><th>critério</th><th>nota</th><th>fonte</th><th>observação</th></tr>` +
+        linhas +
+        `</table>` +
+        (f.medicao
+          ? `<div style="margin-top:6px;font-size:11px;color:var(--muted)" class="mono">` +
+            `ampliação máxima ${Number(f.medicao.ampliacao_maxima || 1).toFixed(2)}x` +
+            (f.medicao.ampliacao_pior_camada ? ` em "${escapa(f.medicao.ampliacao_pior_camada)}"` : '') +
+            ` · costura ${f.medicao.erro_costura_px}px` +
+            ` · ${f.medicao.camadas} recorte(s), ${f.medicao.colocacoes} colocação(ões)</div>`
+          : '') +
+        (f.problemas?.length
+          ? `<ul class="lista">${f.problemas.map((p) => `<li>${escapa(p)}</li>`).join('')}</ul>`
+          : '') +
+        `</div>`,
+    );
+  }
   if (it.auditoria?.problemas?.length) {
     blocos.push(
       `<div class="bloco"><b>A5 · problemas apontados</b><ul class="lista">` +
@@ -283,6 +337,17 @@ function pintaCard(dados) {
         <div><b>${escapa(it.tema || '—')}</b><span>tema</span></div>
         <div><b>${it.erro_costura_px == null ? '—' : it.erro_costura_px}</b><span>erro de costura (px)</span></div>
         <div><b>US$ ${(dados.custo_item_usd || 0).toFixed(4)}</b><span>custo de IA deste item</span></div>
+        ${
+          it.leitura
+            ? `<div><b>${escapa(it.leitura.composicao?.hierarquia || '—')}</b><span>hierarquia na capinha</span></div>`
+            : ''
+        }
+        ${
+          it.arte_w && it.arte_h
+            ? `<div><b>${it.arte_w}×${it.arte_h}</b><span>resolução nativa da arte</span></div>`
+            : ''
+        }
+        <div><b>${it.zona_logo?.disponivel ? 'sim' : 'não'}</b><span>zona de logo cadastrada</span></div>
       </div>
 
       <div class="cadeia">
@@ -426,7 +491,13 @@ function pintaCard(dados) {
 async function geraProducao(item) {
   ocupado('#c-png', true, 'gerando…');
   try {
-    const r = await processaItem({ ...item, png_alta: viaProxy(item.png_alta) });
+    const r = await processaItem(
+      { ...item, png_alta: viaProxy(item.png_alta) },
+      {
+        zonaLogo: item.zona_logo || null,
+        arteNativa: item.arte_w && item.arte_h ? { w: item.arte_w, h: item.arte_h } : null,
+      },
+    );
 
     const blob = await new Promise((ok) => r.composicao.toBlob(ok, 'image/png'));
     const url = URL.createObjectURL(blob);
@@ -481,6 +552,11 @@ async function umaVoltaDoRunner() {
       const r = await processaItem(
         { ...item, png_alta: viaProxy(item.png_alta) },
         {
+          // A zona da logo e a resolução nativa vêm do Factory, lidas pelo
+          // worker quando resolveu a arte. O motor precisa das duas: uma para
+          // não invadir a área da logo, a outra para medir a ampliação.
+          zonaLogo: item.zona_logo || null,
+          arteNativa: item.arte_w && item.arte_h ? { w: item.arte_w, h: item.arte_h } : null,
           // O A4 mora no worker (é ele quem tem a chave do AI Proxy), mas a
           // imagem que ele julga acabou de ser gerada aqui.
           revisarSegmentacao: async (folha, bboxes) => {
@@ -497,6 +573,7 @@ async function umaVoltaDoRunner() {
         item_id: item.id,
         previews: r.previews,
         costura: r.costura,
+        medicao: r.medicao,
         segmentacao: r.segmentacao,
         diagnostico: r.diagnostico,
       };

@@ -506,10 +506,65 @@ function embaralhavel(semente) {
 }
 
 /**
+ * A hierarquia da capinha é preservada de graça, e vale entender por quê.
+ *
+ * Os recortes saem do separador no tamanho NATIVO que tinham na arte original —
+ * se lá uma flor era o triplo de uma folha, o canvas dela é o triplo. Aplicando
+ * a MESMA escala a todos, a proporção entre eles atravessa intacta.
+ *
+ * O que destrói isso é jitter de escala por motivo. Em arte `uniforme` (poá,
+ * oncinha) variar tamanho é justamente apagar o que define a arte — então o
+ * jitter é ligado pela hierarquia lida, não por gosto.
+ */
+function jitterPermitido(leitura) {
+  return leitura?.composicao?.hierarquia !== 'uniforme';
+}
+
+/** Retângulo de uma colocação, para testar contra a zona da logo. */
+function retanguloDe(camada, p) {
+  const w = camada.ow * p.escala;
+  const h = camada.oh * p.escala;
+  return { x: p.x - w / 2, y: p.y - h / 2, w, h };
+}
+
+function interseccao(a, b) {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.w, b.x + b.w);
+  const y2 = Math.min(a.y + a.h, b.y + b.h);
+  return x2 <= x || y2 <= y ? 0 : (x2 - x) * (y2 - y);
+}
+
+/**
+ * Remove as colocações que caem na zona proibida da logo.
+ *
+ * Descartar em vez de empurrar: mover a peça quebraria a grade e, com ela, o
+ * fechamento do rapport (o passo em X é calculado para fechar exato na
+ * largura). Um buraco onde a logo vai ficar é o resultado correto — é ali que a
+ * logo entra.
+ */
+function evitaLogo(colocacoes, camadas, zona) {
+  if (!zona || !zona.disponivel) return { colocacoes, removidas: 0 };
+  const porId = new Map(camadas.map((c) => [c.id, c]));
+  const proibido = { x: zona.x, y: zona.y, w: zona.w, h: zona.h };
+  const mantidas = [];
+  let removidas = 0;
+  for (const p of colocacoes) {
+    const camada = porId.get(p.camadaId);
+    if (camada && interseccao(retanguloDe(camada, p), proibido) > 0) {
+      removidas++;
+      continue;
+    }
+    mantidas.push(p);
+  }
+  return { colocacoes: mantidas, removidas };
+}
+
+/**
  * Grade sem sobreposição. `stagger` desloca linhas alternadas meio passo — é o
  * que evita a leitura de "fileira" quando a densidade é baixa.
  */
-function fillGridNoOverlap(camadas, W, H, plano, stagger) {
+function fillGridNoOverlap(camadas, W, H, plano, stagger, leitura) {
   const motivos = camadas.filter((c) => c.kind === 'motivo');
   if (!motivos.length) return [];
 
@@ -531,6 +586,7 @@ function fillGridNoOverlap(camadas, W, H, plano, stagger) {
 
   const rnd = embaralhavel(cols * 7919 + rows * 104729);
   const margem = (Math.min(W, H) * plano.margem_seguranca_pct) / 100;
+  const gira = plano.rotacao_permitida && jitterPermitido(leitura);
   const coloc = [];
 
   for (let r = 0; r < rows; r++) {
@@ -544,7 +600,7 @@ function fillGridNoOverlap(camadas, W, H, plano, stagger) {
         x,
         y,
         escala,
-        rotacao: plano.rotacao_permitida ? (rnd() - 0.5) * 0.5 : 0,
+        rotacao: gira ? (rnd() - 0.5) * 0.5 : 0,
       });
     }
   }
@@ -552,12 +608,12 @@ function fillGridNoOverlap(camadas, W, H, plano, stagger) {
 }
 
 /** Distribuição tipo stickers: tamanhos variados, sobreposição permitida. */
-function autoCompute(camadas, W, H, plano) {
+function autoCompute(camadas, W, H, plano, leitura) {
   const motivos = camadas.filter((c) => c.kind === 'motivo');
   if (!motivos.length) return [];
 
   const areaMotivo =
-    motivos.reduce((s, c) => s + c.ow * c.oh, 0) / motivos.length * plano.escala_motivos ** 2;
+    (motivos.reduce((s, c) => s + c.ow * c.oh, 0) / motivos.length) * plano.escala_motivos ** 2;
   const quantos = Math.max(
     motivos.length,
     Math.min(220, Math.round((W * H * plano.densidade_alvo) / Math.max(1, areaMotivo))),
@@ -565,6 +621,9 @@ function autoCompute(camadas, W, H, plano) {
 
   const rnd = embaralhavel(quantos * 31 + motivos.length);
   const margem = (Math.min(W, H) * plano.margem_seguranca_pct) / 100;
+  // Em arte uniforme o jitter de escala apaga a identidade da estampa.
+  const varia = jitterPermitido(leitura);
+  const gira = plano.rotacao_permitida && varia;
   const coloc = [];
 
   // Grade jitterada em vez de posição aleatória pura: aleatório puro amontoa
@@ -582,45 +641,93 @@ function autoCompute(camadas, W, H, plano) {
         camadaId: camada.id,
         x: c * px + px * (0.25 + rnd() * 0.5),
         y: Math.min(H - margem, Math.max(margem, r * py + py * (0.25 + rnd() * 0.5))),
-        escala: plano.escala_motivos * (0.75 + rnd() * 0.5),
-        rotacao: plano.rotacao_permitida ? (rnd() - 0.5) * 1.0 : 0,
+        escala: plano.escala_motivos * (varia ? 0.75 + rnd() * 0.5 : 1),
+        rotacao: gira ? (rnd() - 0.5) * 1.0 : 0,
       });
     }
   }
   return coloc;
 }
 
-/** Só o motivo principal, centralizado a 62% da altura. */
-function localizada(camadas, W, H, plano) {
+/**
+ * Composição localizada: o elemento principal em destaque.
+ *
+ * Quando a leitura diz `heroi_com_satelites`, os satélites entram em volta do
+ * herói em vez de serem descartados — era a diferença entre reproduzir a arte e
+ * entregar só o elemento central sozinho, que é outra composição.
+ *
+ * O herói é repetido pelos wrapOffsets como qualquer camada, então a costura
+ * continua fechando; o que muda é a quantidade (um por volta) e a escala.
+ */
+function localizada(camadas, W, H, plano, leitura) {
   const motivos = camadas.filter((c) => c.kind === 'motivo');
   if (!motivos.length) return [];
-  const principal = motivos.reduce((a, b) => ((a.areaOpaca || 0) >= (b.areaOpaca || 0) ? a : b));
-  const cabe = Math.min((W * 0.5) / principal.ow, (H * 0.62) / principal.oh);
-  return [
-    {
-      camadaId: principal.id,
-      x: W / 2,
-      y: H / 2,
-      escala: cabe * plano.escala_motivos,
-      rotacao: 0,
-    },
+
+  const porArea = [...motivos].sort((a, b) => (b.areaOpaca || 0) - (a.areaOpaca || 0));
+  const heroi = porArea[0];
+  const satelites = porArea.slice(1);
+
+  const cabe = Math.min((W * 0.5) / heroi.ow, (H * 0.62) / heroi.oh);
+  const escalaHeroi = cabe * plano.escala_motivos;
+  const coloc = [
+    { camadaId: heroi.id, x: W / 2, y: H / 2, escala: escalaHeroi, rotacao: 0 },
   ];
+
+  const comSatelites =
+    leitura?.composicao?.hierarquia === 'heroi_com_satelites' && satelites.length > 0;
+  if (!comSatelites) return coloc;
+
+  // Satélites em anel elíptico em volta do herói. O raio sai do tamanho do
+  // herói, então eles acompanham a escala em vez de flutuarem soltos.
+  const rnd = embaralhavel(satelites.length * 6151 + Math.round(escalaHeroi * 100));
+  const raioX = (heroi.ow * escalaHeroi) / 2 + Math.min(W, H) * 0.1;
+  const raioY = (heroi.oh * escalaHeroi) / 2 + Math.min(W, H) * 0.08;
+  const quantos = Math.min(12, Math.max(satelites.length, 6));
+  const margem = (Math.min(W, H) * plano.margem_seguranca_pct) / 100;
+
+  for (let i = 0; i < quantos; i++) {
+    const camada = satelites[i % satelites.length];
+    const ang = (i / quantos) * Math.PI * 2 + rnd() * 0.3;
+    coloc.push({
+      camadaId: camada.id,
+      x: W / 2 + Math.cos(ang) * raioX,
+      y: Math.min(H - margem, Math.max(margem, H / 2 + Math.sin(ang) * raioY)),
+      // Satélite acompanha a escala do herói, mantendo a proporção nativa
+      // entre eles — é o que preserva a hierarquia da capinha.
+      escala: escalaHeroi * 0.9,
+      rotacao: plano.rotacao_permitida ? (rnd() - 0.5) * 0.6 : 0,
+    });
+  }
+  return coloc;
 }
 
-/** Distribui as camadas na máscara conforme o plano do A3. */
-export function layoutCompute(camadas, mascara, plano) {
+/**
+ * Distribui as camadas na máscara conforme o plano do A3.
+ *
+ * `leitura` entra aqui porque a hierarquia decide detalhes que o plano não
+ * carrega (se pode variar escala, se satélites acompanham o herói), e `zona`
+ * porque a zona da logo é restrição de geometria, não de julgamento.
+ */
+export function layoutCompute(camadas, mascara, plano, leitura = null, zona = null) {
   const { w: W, h: H } = mascara;
+  let coloc;
   switch (plano.estilo) {
     case 'linear':
-      return fillGridNoOverlap(camadas, W, H, plano, false);
+      coloc = fillGridNoOverlap(camadas, W, H, plano, false, leitura);
+      break;
     case 'distribuido':
-      return fillGridNoOverlap(camadas, W, H, plano, true);
+      coloc = fillGridNoOverlap(camadas, W, H, plano, true, leitura);
+      break;
     case 'localizada':
-      return localizada(camadas, W, H, plano);
+      coloc = localizada(camadas, W, H, plano, leitura);
+      break;
     case 'stickers':
     default:
-      return autoCompute(camadas, W, H, plano);
+      coloc = autoCompute(camadas, W, H, plano, leitura);
+      break;
   }
+  const { colocacoes, removidas } = evitaLogo(coloc, camadas, zona);
+  return { colocacoes, removidas_pela_logo: removidas };
 }
 
 /**
@@ -723,6 +830,103 @@ export function medirCostura(canvas) {
   }
 
   return { erro_costura_px: linhas, pior_degrau: pior, limiar, altura: h };
+}
+
+/**
+ * Critério 4 — ampliação máxima aplicada a um recorte.
+ *
+ * `escala` de uma colocação é exatamente o fator de ampliação, porque o recorte
+ * é desenhado a partir do canvas nativo dele: escala 2 significa que cada pixel
+ * da arte original virou 4 na impressão. Camada de fundo é medida pelo esticão
+ * até a máscara.
+ *
+ * É medida, não estimativa — e é por isso que o A11 não opina sobre este
+ * critério, só escreve a observação.
+ */
+export function medirAmpliacao(camadas, colocacoes, mascara) {
+  const porId = new Map(camadas.map((c) => [c.id, c]));
+  let pior = 0;
+  let onde = null;
+
+  for (const p of colocacoes) {
+    const camada = porId.get(p.camadaId);
+    if (!camada || camada.kind === 'fonte') continue;
+    if (p.escala > pior) {
+      pior = p.escala;
+      onde = camada.nome || `recorte #${camada.id}`;
+    }
+  }
+
+  for (const camada of camadas) {
+    if (camada.kind !== 'fundo') continue;
+    const f = Math.max(mascara.w / camada.ow, mascara.h / camada.oh);
+    if (f > pior) {
+      pior = f;
+      onde = camada.nome || 'fundo';
+    }
+  }
+
+  return { ampliacao_maxima: pior || 1, ampliacao_pior_camada: onde };
+}
+
+/**
+ * Critério 5 — quanto da zona proibida da logo está coberto por arte.
+ *
+ * Mede na composição já rasterizada, não nas colocações: é o pixel que decide,
+ * e camada de fundo esticada também invade. Devolve `null` quando não há zona
+ * cadastrada, para o A11 responder "não verificado" em vez de "aprovado".
+ */
+export function medirInvasaoLogo(canvas, zona) {
+  if (!zona || !zona.disponivel) return null;
+
+  const x = Math.max(0, Math.round(zona.x));
+  const y = Math.max(0, Math.round(zona.y));
+  const w = Math.min(canvas.width - x, Math.round(zona.w));
+  const h = Math.min(canvas.height - y, Math.round(zona.h));
+  if (w <= 0 || h <= 0) {
+    return { invade: false, cobertura: 0, colocacoes_invasoras: 0 };
+  }
+
+  const d = ctx2d(canvas).getImageData(x, y, w, h).data;
+  let opacos = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i] > 24) opacos++;
+  const cobertura = opacos / (w * h);
+
+  // 2% de tolerância: antialiasing de um motivo vizinho encostando na borda da
+  // zona não é invasão, e reprovar por isso geraria ajuste sem fim.
+  return { invade: cobertura > 0.02, cobertura, colocacoes_invasoras: 0 };
+}
+
+/** Reúne as três medições que o A11 recebe como fato. */
+export function medirFidelidade(canvas, camadas, colocacoes, mascara, contexto = {}) {
+  const costura = medirCostura(canvas);
+  const amp = medirAmpliacao(camadas, colocacoes, mascara);
+  const logo = medirInvasaoLogo(canvas, contexto.zonaLogo);
+
+  const invasoras = (() => {
+    if (!logo || !contexto.zonaLogo?.disponivel) return logo;
+    const z = contexto.zonaLogo;
+    const porId = new Map(camadas.map((c) => [c.id, c]));
+    let n = 0;
+    for (const p of colocacoes) {
+      const camada = porId.get(p.camadaId);
+      if (camada && interseccao(retanguloDe(camada, p), { x: z.x, y: z.y, w: z.w, h: z.h }) > 0) n++;
+    }
+    return { ...logo, colocacoes_invasoras: n };
+  })();
+
+  return {
+    erro_costura_px: costura.erro_costura_px,
+    ampliacao_maxima: amp.ampliacao_maxima,
+    ampliacao_pior_camada: amp.ampliacao_pior_camada,
+    arte_nativa: contexto.arteNativa || null,
+    invade_logo: invasoras,
+    logo_indisponivel:
+      contexto.zonaLogo && !contexto.zonaLogo.disponivel ? contexto.zonaLogo.motivo : null,
+    camadas: camadas.length,
+    colocacoes: colocacoes.length,
+    sem_rapport: colocacoes.length === 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -841,7 +1045,13 @@ export async function processaItem(item, opcoes = {}) {
     }
   }
 
-  const colocacoes = layoutCompute(camadas, mascara, plano);
+  const { colocacoes, removidas_pela_logo } = layoutCompute(
+    camadas,
+    mascara,
+    plano,
+    leitura,
+    opcoes.zonaLogo || null,
+  );
 
   // Arte de fundo contínuo (aquarela corrida, tie-dye) não tem motivo para
   // distribuir: o separador devolve uma camada só, que cobre o canvas e por
@@ -862,6 +1072,10 @@ export async function processaItem(item, opcoes = {}) {
 
   const composicao = composeFrom(camadas, colocacoes, mascara);
   const costura = medirCostura(composicao);
+  const medicao = medirFidelidade(composicao, camadas, colocacoes, mascara, {
+    zonaLogo: opcoes.zonaLogo || null,
+    arteNativa: opcoes.arteNativa || null,
+  });
   const tile = ladrilho3x1(composicao);
 
   return {
@@ -869,6 +1083,7 @@ export async function processaItem(item, opcoes = {}) {
     camadas,
     segmentacao,
     costura,
+    medicao,
     previews: {
       composicao: paraDataUrl(composicao, 900),
       ladrilho3x1: paraDataUrl(tile, 700),
@@ -879,6 +1094,9 @@ export async function processaItem(item, opcoes = {}) {
       camadas_finais: camadas.length,
       colocacoes: colocacoes.length,
       estilo: plano.estilo,
+      hierarquia: leitura?.composicao?.hierarquia || null,
+      removidas_pela_logo,
+      ampliacao_maxima: medicao.ampliacao_maxima,
       sem_rapport: colocacoes.length === 0,
       ms: Math.round(performance.now() - t0),
     },

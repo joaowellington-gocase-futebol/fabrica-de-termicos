@@ -238,12 +238,18 @@ async function rotaEntregar(request: Request, env: Env): Promise<Response> {
   const costura = (b.costura || {}) as Record<string, unknown>;
   const erroPx = Math.max(0, Number(costura.erro_costura_px) || 0);
 
+  // A medição determinística vai para coluna própria: quem mede é o browser,
+  // quem julga (o A11) é o worker, em outra requisição. Sem isso o juiz de
+  // fidelidade não teria os três critérios calculados.
+  const medicao = (b.medicao ?? null) as Record<string, unknown> | null;
+
   await atualiza(
     env,
     id,
     {
       estado: 'composta',
       erro_costura_px: erroPx,
+      medicao,
       segmentacao: b.segmentacao ?? item.segmentacao,
       travado_em: null,
     },

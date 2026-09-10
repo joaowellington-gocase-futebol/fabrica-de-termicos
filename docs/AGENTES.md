@@ -1,8 +1,13 @@
 # Malha de agentes de IA — AI Proxy do Gogroup
 
-Todos os agentes falam com `https://ai-proxy.gogroupbr.com/v1/chat/completions`
-(OpenAI-compatible, com visão), `Authorization: Bearer ${AI_PROXY_TOKEN}`,
-modelo `${AI_MODEL}` — padrão `gpt-5.5`.
+Todos os agentes falam com `${AI_BASE_URL}/v1/chat/completions`
+(OpenAI-compatible, com visão), `Authorization: Bearer ${AI_API_KEY}`,
+modelo `${AI_MODEL}` — padrão `gpt-5.6-sol`.
+
+> Os nomes de secret são `AI_API_KEY` / `AI_BASE_URL`, **não**
+> `AI_PROXY_TOKEN` / `AI_PROXY_URL` como uma versão anterior desta doc dizia:
+> seguem o que `buscador-de-estampas` e `trend-hunter` já usam em produção, para
+> a mesma credencial servir os três apps. Ver `docs/ARQUITETURA.md`.
 
 Convenção obrigatória para todo agente:
 
@@ -48,12 +53,33 @@ Entende a estampa. É a saída dele que decide a rota de todo o resto.
   "separavel": true,
   "fundo": { "tipo": "solido|textura|transparente", "cor": "#F2E8DC" },
   "motivos": [ { "nome": "ramo de lavanda", "contagem_aprox": 7,
-                 "papel": "principal|secundario|ornamento" } ],
+                 "papel": "principal|secundario|ornamento",
+                 "tamanho_relativo": 1.0 } ],
+  "composicao": {
+    "hierarquia": "uniforme|um_dominante|heroi_com_satelites|escalonada",
+    "elemento_principal": "flor grande" ,
+    "proporcao_maior_menor": 3.2,
+    "arranjo": "grade|espalhado|agrupado|centralizado|moldura",
+    "tem_orientacao": true },
   "paleta": ["#8B7AA8"], "estilo": "aquarela botânica",
   "densidade": "baixa|media|alta",
   "tem_texto": false, "tem_logo": false,
   "rota_recomendada": "deterministica|generativa", "confianca": 0.86 }
 ```
+
+O bloco `composicao` é a **relação** entre os elementos, e não a lista deles.
+Existe porque uma lista de motivos não distingue um padrão de iguais de um
+desenho com um elemento herói cercado de satélites — e os dois viram
+composições completamente diferentes na garrafa. É a entrada do critério 1 do
+A11, e o `tamanho_relativo` de cada motivo é o que permite ao compositor
+preservar a hierarquia em vez de achatar tudo no mesmo tamanho.
+
+Detalhe de implementação que evita um erro comum: os recortes saem do separador
+no tamanho **nativo** que tinham na arte original, então aplicar a mesma escala
+a todos já preserva a proporção. O que destrói a hierarquia é *jitter* de escala
+por motivo — por isso ele é ligado pela `hierarquia` lida, e desligado em arte
+`uniforme`.
+
 `tem_texto` / `tem_logo` são trava: texto e logo não podem entrar em rapport —
 repetiriam a marca dando a volta na garrafa. Vão direto para a fila humana.
 
@@ -155,6 +181,56 @@ erro repetido, e escreve o resumo diário.
 É este agente que faz a esteira parecer autônoma — e o que torna o número de
 90% observável em vez de prometido.
 
+## A11 — Juiz de Fidelidade  *(visão — a última porta antes do humano)*
+
+Julga o RESULTADO contra a ARTE DE ORIGEM. É a diferença em relação ao A5: o A5
+olha só o resultado e pergunta "esta arte está bem feita?"; o A11 olha os dois e
+pergunta **"esta continua sendo a arte que vendia?"** — que é o que o projeto
+promete.
+
+Recebe duas imagens (a capinha original e o ladrilho 3x1 do térmico) e avalia
+cinco critérios. **Três são MEDIDOS em código, não julgados:**
+
+| # | critério | fonte | como |
+|---|---|---|---|
+| 1 | semelhança com a composição da capinha | julgado | compara elementos, hierarquia, arranjo, densidade e paleta |
+| 2 | o rapport encaixa | **medido** | `medirCostura()` — linhas de descontinuidade na emenda |
+| 3 | recorte dos elementos é coerente | julgado | fragmento, meia-flor, halo de fundo sobrando |
+| 4 | respeita a resolução da case | **medido** | `medirAmpliacao()` — maior fator de ampliação aplicado a um recorte |
+| 5 | respeita a margem da logo | **medido** | `medirInvasaoLogo()` — fração da zona proibida coberta por arte |
+
+Para os medidos o modelo recebe o número e escreve só a observação; se
+contradisser a medição, `consolidar()` sobrescreve. **Medição vence opinião.**
+
+```json
+{ "criterios": {
+    "semelhanca_composicao": { "nota": 8.5, "fonte": "julgado", "observacao": "..." },
+    "rapport":               { "nota": 10,  "fonte": "medido",  "observacao": "..." },
+    "coerencia_recorte":     { "nota": 9,   "fonte": "julgado", "observacao": "..." },
+    "resolucao":             { "nota": 9.2, "fonte": "medido",  "observacao": "..." },
+    "margem_logo":           { "nota": 5,   "fonte": "medido",  "observacao": "NÃO VERIFICADO: ..." } },
+  "nota_final": 8.7, "veredito": "aprovado|ajustar|reprovado",
+  "problemas": [], "ajuste_sugerido": null, "medicao": { ... }, "confianca": 0.88 }
+```
+
+Pesos: semelhança 0,30 · rapport 0,25 · recorte 0,20 · resolução 0,15 ·
+margem 0,10. Semelhança pesa mais porque é a promessa do projeto.
+
+**Vetos independentes da média:** costura acima de 2px, ampliação acima de 2,0x
+ou invasão da zona da logo reprovam sozinhas. Média serve para ler *quão bom*;
+veto serve para decidir.
+
+**Critério 5 e o dado que falta.** A margem da logo vem de
+`factory materials.logo_pos_x/logo_pos_y/logo_size/logo_border_size`. Medido em
+2026-09-10, essas colunas vêm **NULL** para todos os térmicos do primeiro corte
+(fresh 650/950, flip pro, copo 470) e **zeradas** nos MagSafe; só as garrafas
+Kids têm valor real. Quando o dado falta, o critério responde
+**"NÃO VERIFICADO"** e sai do cálculo da média, com o peso redistribuído — em
+vez de "aprovado". Um critério de compliance que passa por falta de dado é pior
+que não existir.
+
+Como o A7, **falha fechado**: se o A11 cair, o item não é aprovado.
+
 ---
 
 ## Tabela de alocação
@@ -171,6 +247,7 @@ erro repetido, e escreve o resumo diário.
 | A8 | Nomeador | texto | gpt-5.5 | 0.5 | não |
 | A9 | Redator de Catálogo | texto | gpt-5.5 | 0.7 | não |
 | A10 | Supervisor | texto | gpt-5.5 | 0.2 | não |
+| A11 | Juiz de Fidelidade | visão | gpt-5.5 | 0.2 | **sim** (veto medido) |
 
 Geração de imagem (rota generativa de reserva) **não** é AI Proxy: é PIAPP
 (`seedream-v5-pro` / `flux-2-max-edit`), assíncrono via `job_id` + polling.

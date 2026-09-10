@@ -4,6 +4,9 @@ Este documento existe porque **três restrições do GoDeploy contradizem o dese
 original** descrito em `ORQUESTRACAO.md`. Nenhuma é contornável com esforço; as
 três mudam onde o código roda. Ler antes de mexer na esteira.
 
+No fim há um quarto achado, de outra natureza: a margem de segurança da logo
+Gocase **não está cadastrada** no Factory para os térmicos deste projeto.
+
 Levantado em 2026-09-10, contra a plataforma real.
 
 ---
@@ -23,7 +26,7 @@ esse trabalho hoje — `ag-psd.js` e canvas, **no browser**.
 | runtime | o que faz |
 |---|---|
 | **worker** | fila, estados, os 10 agentes do AI Proxy, curadoria, resolução de arte, `agente_log`, aprovação. **Nunca toca pixel.** |
-| **browser** | separador (flood-fill + componentes conexos) e rapport (`layoutCompute`, `wrapOffsets`, `composeFrom`), medição de costura. `src/web/motor.js`. |
+| **browser** | separador (flood-fill + componentes conexos) e rapport (`layoutCompute`, `wrapOffsets`, `composeFrom`), e as três medições do A11: costura, ampliação e invasão da zona da logo. `src/web/motor.js`. |
 
 O browser não é "o cliente": é um **executor da esteira**. Enquanto o botão
 _Ligar motor gráfico_ está ativo, a aba reivindica itens parados em `planejada`,
@@ -50,20 +53,23 @@ até ~900px — ficam gravados, e é deles que os agentes de visão se alimentam
 
 ## 2. O proxy de dados autentica pelo cookie do visitante — o cron não cura
 
-`env.PROXY_BASE_URL` é **PostgREST somente leitura**, e a autorização é o cookie
-de sessão Google do visitante, repassado pelo worker. Duas consequências:
+`env.PROXY_BASE_URL` é **somente leitura**, e a autorização é o cookie de sessão
+Google do visitante, repassado pelo worker. Duas consequências:
 
-### 2a. Não existe SQL
+### 2a. Existe SQL — mas com um teto silencioso
 
-Sem `JOIN`, sem `GROUP BY` arbitrário. A "query do gap" de `ORQUESTRACAO.md`
-virou, em `src/core/dados.ts`:
+Correção de uma versão anterior deste documento: o proxy **aceita SQL**, via
+`POST /{db}/_query` com `{sql}`. A primeira versão de `dados.ts` usava a
+interface PostgREST (`GET /{db}/{schema}.{tabela}`) e agregava no worker por
+supor que não havia `GROUP BY` — desnecessário. O padrão de SQL é o que o
+`mockup-studio` já usa em produção.
 
-1. tenta agregação do PostgREST (`unidades.sum()`), que resolve numa requisição;
-2. se o servidor não tiver agregação habilitada, cai para páginas de linhas
-   cruas somadas no worker (teto de 40k linhas).
-
-O modo usado volta na resposta de `/api/curar` (`modo_agregacao`) — para ser um
-dado visível e não um mistério.
+O que **é** verdade e continua importando: o proxy **corta a resposta em 1000
+linhas sem avisar**. Toda consulta que pode passar disso precisa de agregação ou
+de paginação com ordenação total — senão a resposta chega incompleta em
+silêncio. A "query do gap" é resolvida em duas consultas agregadas (uma no
+datamart, uma no factory) com o anti-join feito no worker, porque o datamart não
+conhece a tabela `products`.
 
 ### 2b. O cron não tem cookie
 
@@ -89,8 +95,13 @@ O worker é HTTP-only: sem `scheduled()`, sem `setInterval`, sem fila de
 consumidor. O agendamento é da **plataforma**, via `createCronJob`, que faz um
 `POST` numa rota comum do app.
 
-Por isso a esteira é `POST /tasks/tick` e não um handler agendado. A rota
-verifica `X-Godeploy-Cron` contra `GODEPLOY_CRON_KEY`.
+Por isso a esteira é `POST /tasks/tick` e não um handler agendado.
+
+Um detalhe que custou três deploys: `X-Godeploy-Cron` é uma **assinatura**
+derivada da chave, não a chave em texto, e a plataforma injeta
+`GODEPLOY_CRON_KEY` sozinha. Comparar o header com a chave devolve 403 ao
+próprio cron do gateway. O que dá para verificar é a **presença** do header — o
+gateway remove qualquer `x-godeploy-*` que venha de fora antes de despachar.
 
 Cada tick avança **no máximo 6 itens**. O teto existe porque cada estágio pode
 custar duas chamadas de visão e o orçamento de CPU/tempo é por requisição —
@@ -106,20 +117,30 @@ candidata ──[worker + cookie]──► arte_ok ──[worker A2]──► li
                                               ├─ tem_texto/tem_logo → bloqueado_leitor
                                               └─ confiança < 0,6    → aguardando_aprovacao
 
-lida ──[worker A3]──► planejada ──[BROWSER: separador + rapport]──► composta
-                          ▲                                            │
-                          │                                    [worker A5]
-                          │                                            │
-                          └────── nota < 7 (até 2x) ◄── auditada ◄─────┘
-                                                            │
-                                              [worker A6, A7, A8, A9]
-                                                            │
-                                       bloqueado_marca ◄────┴───► aguardando_aprovacao
-                                                                         │
-                                                                    [HUMANO]
-                                                                         │
-                                                          aprovada / reprovada
+lida ──[worker A3]──► planejada ──[BROWSER: separador + rapport + medições]──► composta
+                          ▲                                                       │
+                          │                                               [worker A5]
+                          │                                                       │
+                          │                                              auditada │
+                          │                                                       │
+                          │                                              [worker A11]
+                          │                                                       │
+                          └────── nota < 7 (até 2x) ◄──────── julgada ◄───────────┘
+                                                                │
+                                                  [worker A6, A7, A8, A9]
+                                                                │
+                                       bloqueado_marca ◄────────┴───► aguardando_aprovacao
+                                                                             │
+                                                                        [HUMANO]
+                                                                             │
+                                                              aprovada / reprovada
 ```
+
+O A11 roda **depois** do A5 e **antes** do A6/A7/A8/A9: é caro gerar cor, copy e
+nome de uma arte que não passa de fidelidade. E as medições que ele consome
+(costura, ampliação, invasão da logo) são calculadas pelo BROWSER e gravadas na
+coluna `medicao` — quem mede e quem julga são runtimes diferentes, em
+requisições diferentes.
 
 Falha em qualquer estágio vira `falhou_<estagio>` com o motivo, sem travar a
 fila. `POST /api/item/:id/reprocessar` devolve o item ao estado anterior ao erro.
@@ -162,3 +183,43 @@ novo e, se o servidor reclamar do parâmetro, repete com o antigo.
 5. **As chaves vindas do A1 são validadas contra o que foi enviado.** Sem esse
    cerco o modelo alucina uma `estampa_key` plausível e a falha aparece três
    estágios adiante, longe da causa.
+6. **O A11 falha fechado, e três dos cinco critérios dele são medidos.** O
+   modelo recebe o número e escreve a observação; se contradisser a medição,
+   `consolidar()` sobrescreve.
+7. **Critério de compliance sem dado responde "não verificado", nunca
+   "aprovado".** Vale hoje para a margem da logo — ver abaixo.
+
+---
+
+## A margem da logo não está no Factory (medido em 2026-09-10)
+
+A intenção era ler de `factory materials` onde a logo Gocase fica e qual a folga
+dela em cada térmico. As colunas existem — `logo_pos_x`, `logo_pos_y`,
+`logo_size`, `logo_border_size` — mas para os materiais deste projeto **os dados
+não estão lá**:
+
+| material | logo_pos_x/y | logo_size | applies_custom_logo |
+|---|---|---|---|
+| `*-garrafafresh650` / `950` | NULL | NULL | false |
+| `*-garrafapro750ml` (flip pro) | NULL | NULL | false |
+| `*-copocerveja470` | NULL | NULL | false |
+| `*-garrafamagsafe750` | **0** | **0** | false |
+| `*-garrafakids460` | 1184 / 1303 | 412 (borda 199) | false |
+
+De 11.109 materiais, 3.047 têm `logo_pos_x`; dos térmicos, 102 — e desses, a
+maioria com zeros. As únicas linhas com valor real são as garrafas Kids.
+
+O `grid_mask` / `preview_mask` do material é uma **imagem** (a silhueta do
+mockup), não um número: serve para renderizar prévia, não para delimitar área
+segura de impressão.
+
+**Como o código trata isso.** `zonaLogo()` em `core/dados.ts` é o mecanismo
+completo, pronto para o dia em que o cadastro for preenchido: quando há valor,
+devolve o retângulo proibido (a logo dilatada por `logo_border_size`), o motor
+descarta as colocações que caem ali e o A11 mede a invasão. Quando não há,
+devolve `{ disponivel: false, motivo }`, o critério 5 responde
+**"NÃO VERIFICADO"** com o motivo, sai do cálculo da média e o problema aparece
+na lista do card.
+
+**O que destrava:** preencher `logo_pos_x/y`, `logo_size` e `logo_border_size`
+dos materiais de térmico no Factory. Feito isso, nada precisa mudar no código.

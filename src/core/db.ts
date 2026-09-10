@@ -21,6 +21,21 @@ import type { Env, Estado, ItemFila } from './tipos';
  */
 export const TAMANHO_FATIA = 700_000;
 
+/**
+ * Colunas adicionadas depois da primeira versão do schema.
+ *
+ * Acrescentar aqui é o jeito de evoluir a tabela sem perder a fila que já está
+ * no ar. Nunca remover uma linha desta lista: quem já rodou a migração não a
+ * roda de novo, mas quem está subindo pela primeira vez precisa dela.
+ */
+const COLUNAS_NOVAS: [string, string, string][] = [
+  ['fila', 'fidelidade', 'TEXT'],
+  ['fila', 'medicao', 'TEXT'],
+  ['fila', 'zona_logo', 'TEXT'],
+  ['fila', 'arte_w', 'INTEGER'],
+  ['fila', 'arte_h', 'INTEGER'],
+];
+
 let pronto = false;
 
 export async function garanteSchema(env: Env): Promise<void> {
@@ -48,6 +63,11 @@ export async function garanteSchema(env: Env): Promise<void> {
        plano TEXT,
        segmentacao TEXT,
        auditoria TEXT,
+       fidelidade TEXT,
+       medicao TEXT,
+       zona_logo TEXT,
+       arte_w INTEGER,
+       arte_h INTEGER,
        cor TEXT,
        marca TEXT,
        nomeacao TEXT,
@@ -153,6 +173,22 @@ export async function garanteSchema(env: Env): Promise<void> {
     [],
   );
 
+  // Migração de coluna.
+  //
+  // `CREATE TABLE IF NOT EXISTS` não toca numa tabela que já existe, e o
+  // env.DB é persistente entre deploys — então coluna nova só entra por ALTER.
+  // O SQLite não tem `ADD COLUMN IF NOT EXISTS`, e um ALTER repetido lança;
+  // por isso cada um vai em try/catch. É idempotente por consequência, não por
+  // elegância.
+  for (const [tabela, coluna, tipo] of COLUNAS_NOVAS) {
+    try {
+      await env.DB.exec(`ALTER TABLE ${tabela} ADD COLUMN ${coluna} ${tipo}`, []);
+      console.log(`[schema] coluna ${tabela}.${coluna} criada`);
+    } catch {
+      /* já existe */
+    }
+  }
+
   await env.DB.exec('CREATE INDEX IF NOT EXISTS idx_fila_estado ON fila(estado)', []);
   await env.DB.exec('CREATE INDEX IF NOT EXISTS idx_log_item ON agente_log(item_id)', []);
   await env.DB.exec('CREATE INDEX IF NOT EXISTS idx_log_quando ON agente_log(quando)', []);
@@ -197,6 +233,11 @@ export function paraItem(r: Record<string, unknown>): ItemFila {
     plano: leJson(r.plano),
     segmentacao: leJson(r.segmentacao),
     auditoria: leJson(r.auditoria),
+    fidelidade: leJson(r.fidelidade),
+    medicao: leJson(r.medicao),
+    zona_logo: leJson(r.zona_logo),
+    arte_w: r.arte_w === null || r.arte_w === undefined ? null : Number(r.arte_w),
+    arte_h: r.arte_h === null || r.arte_h === undefined ? null : Number(r.arte_h),
     cor: leJson(r.cor),
     marca: leJson(r.marca),
     nomeacao: leJson(r.nomeacao),
@@ -247,6 +288,11 @@ const COLUNAS_GRAVAVEIS = new Set([
   'plano',
   'segmentacao',
   'auditoria',
+  'fidelidade',
+  'medicao',
+  'zona_logo',
+  'arte_w',
+  'arte_h',
   'cor',
   'marca',
   'nomeacao',
@@ -415,8 +461,9 @@ export async function metricas(env: Env): Promise<{
   falhas: number;
   nota_media: number | null;
   costura_zero_pct: number | null;
+  fidelidade_media: number | null;
 }> {
-  const [rotas, custo, notas, costura] = await Promise.all([
+  const [rotas, custo, notas, costura, fid] = await Promise.all([
     env.DB.query(
       `SELECT COALESCE(rota_usada, 'indefinida') AS rota, COUNT(*) AS n, AVG(nota_auditor) AS nota
        FROM fila GROUP BY rota_usada`,
@@ -433,6 +480,14 @@ export async function metricas(env: Env): Promise<{
       `SELECT COUNT(*) AS n,
               COALESCE(SUM(CASE WHEN erro_costura_px = 0 THEN 1 ELSE 0 END), 0) AS zeros
        FROM fila WHERE erro_costura_px IS NOT NULL`,
+      [],
+    ),
+    // A nota do A11 mora dentro de uma coluna JSON; json_extract evita ter de
+    // trazer a linha inteira só para calcular a média.
+    env.DB.query(
+      `SELECT AVG(CAST(json_extract(fidelidade, '$.nota_final') AS REAL)) AS m,
+              COUNT(fidelidade) AS n
+       FROM fila WHERE fidelidade IS NOT NULL`,
       [],
     ),
   ]);
@@ -456,6 +511,7 @@ export async function metricas(env: Env): Promise<{
     falhas: Number(custo.rows[0]?.falhas || 0),
     nota_media: Number(notas.rows[0]?.n || 0) ? Number(notas.rows[0]?.m) : null,
     costura_zero_pct: nCostura ? (Number(costura.rows[0]?.zeros || 0) / nCostura) * 100 : null,
+    fidelidade_media: Number(fid.rows[0]?.n || 0) ? Number(fid.rows[0]?.m) : null,
   };
 }
 

@@ -64,7 +64,13 @@ export function comImagens(
  * não interessam àquela decisão).
  */
 export function resumoLeitura(l: LeituraEstampa): string {
-  const motivos = l.motivos.map((m) => `${m.nome} (${m.papel}, ~${m.contagem_aprox}x)`).join('; ');
+  const motivos = l.motivos
+    .map(
+      (m) =>
+        `${m.nome} (${m.papel}, ~${m.contagem_aprox}x, tamanho relativo ${m.tamanho_relativo.toFixed(2)})`,
+    )
+    .join('; ');
+  const c = l.composicao;
   return [
     `tipo: ${l.tipo}`,
     `separável: ${l.separavel ? 'sim' : 'não'}`,
@@ -73,6 +79,13 @@ export function resumoLeitura(l: LeituraEstampa): string {
     `estilo: ${l.estilo}`,
     `paleta: ${l.paleta.join(', ')}`,
     `motivos: ${motivos || 'nenhum isolado'}`,
+    // A hierarquia vem em bloco proprio porque e o que os agentes seguintes
+    // tem de PRESERVAR — achatar isso e a forma mais comum de a garrafa virar
+    // outra arte.
+    `composicao: hierarquia ${c.hierarquia}, arranjo ${c.arranjo}, ` +
+      `maior/menor ${c.proporcao_maior_menor.toFixed(1)}x, ` +
+      `orientacao ${c.tem_orientacao ? 'sim' : 'nao'}` +
+      (c.elemento_principal ? `, elemento principal: ${c.elemento_principal}` : ''),
     `tem_texto: ${l.tem_texto} · tem_logo: ${l.tem_logo}`,
   ].join('\n');
 }
