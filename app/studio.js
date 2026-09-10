@@ -481,8 +481,6 @@
     v.bd.appendChild(res);
     palco.appendChild(v.p);
 
-    var btn = avancar(v.ft, "Interpretar a arte", 1, !!S.case);
-
     function buscar(q) {
       res.innerHTML = '<div class="carregando"><span class="spin"></span>procurando…</div>';
       api("/api/case?q=" + encodeURIComponent(q)).then(function (j) {
@@ -501,11 +499,8 @@
           b.addEventListener("click", function () {
             S.case = it; S.imagem = null; S.leitura = null; S.cores = null;
             S.colecao = null; S.pecas = []; S.rotabPrompt = null; S.saidas = [];
-            Array.prototype.forEach.call(g.children, function (o) { o.setAttribute("aria-pressed", "false"); });
-            b.setAttribute("aria-pressed", "true");
-            btn.disabled = false;
-            trilha();
             toast("Case selecionada: " + it.nome);
+            ir(1);
           });
           g.appendChild(b);
         });
@@ -542,7 +537,6 @@
     var b = el("button", "btn primary", S.leitura ? "Interpretar de novo" : "Interpretar");
     b.type = "button";
     v.ft.appendChild(b);
-    var prox2 = avancar(v.ft, "Avançar", 2, !!S.leitura);
 
     function mostrar(x) {
       lado.innerHTML = "";
@@ -586,9 +580,9 @@
       lado.innerHTML = '<div class="carregando"><span class="spin"></span>o agente está olhando a arte…</div>';
       rodar("leitor", S.case.arte).then(function (r) {
         if (!r.ok) throw new Error(r.erro);
-        S.leitura = r.dados; mostrar(r.dados);
-        prox2.disabled = false; trilha();
+        S.leitura = r.dados;
         toast("Interpretado em " + (r.ms/1000).toFixed(1) + "s");
+        ir(2);
       }).catch(function (e) {
         lado.innerHTML = '<div class="aviso err">' + esc(e.message) + '</div>';
       }).then(function () { b.disabled = false; b.textContent = "Interpretar de novo"; });
