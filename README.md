@@ -63,9 +63,13 @@ reprocessar um item sem refazer o lote.
 | [docs/AGENTES.md](docs/AGENTES.md) | contrato de entrada/saída de cada um dos 10 agentes |
 | [docs/ORGANOGRAMA.md](docs/ORGANOGRAMA.md) | organograma das funções de IA (Mermaid) |
 | [docs/EQUIPE.md](docs/EQUIPE.md) | as 6 trilhas de trabalho e o sequenciamento |
+| [docs/MAPA-MENTAL.md](docs/MAPA-MENTAL.md) | mapa mental, dependências entre trilhas e os 5 marcos |
 | [docs/MAPA-ATIVOS.md](docs/MAPA-ATIVOS.md) | levantamento do que já existe e pode ser reusado |
 
-**Protótipo de interface:** [`prototipo/index.html`](prototipo/index.html)
+**Quadro da equipe (ao vivo):** https://quadro-termicos.devgogroup.com/ — mapa mental,
+board com cards arrastáveis e edição das trilhas. Código em [`app/`](app/).
+
+**Protótipo da esteira:** [`prototipo/index.html`](prototipo/index.html)
 
 ## Antes de escrever código, leia isto
 
