@@ -104,3 +104,42 @@ etapa 5b, e o ciclo `generateImage`/poll do PIAPP virou `dispararGeracao()` +
 `consultarJob()` — agora chamando `chamarAgente()` (não mais `fetch` direto)
 e com a mesma persistência em chunks (`rotab_chunks`) porque a `output_url`
 expira. Precisa do segredo `PIAPP_TOKEN` além do `AI_PROXY_TOKEN`.
+
+
+## 9. Arte de produção fica no Factory, não no preview (2026-09-10)
+
+O preview que o Site serve (`velociraptor_products.image_br`, cortado em
+`stamp=`) tem cerca de **851 px** de largura. O **arquivo de produção do mesmo
+desenho** está no Factory e é muito maior:
+
+```sql
+SELECT s.width, s.height, s.image, m.slug AS material
+FROM public.stamps s
+JOIN public.products p ON p.id = s.product_id
+JOIN public.available_product_materials apm ON apm.product_id = p.id
+JOIN public.materials m ON m.id = apm.material_id
+WHERE p.engine_identifier = 'ramos-de-lavanda'
+ORDER BY s.width::bigint * s.height::bigint DESC;
+```
+
+Para `ramos-de-lavanda` isso devolve **9080x3880** e **3504x7200** — contra os
+851x1742 do preview. A tabela `stamps` tem `width`/`height`, então dá para
+escolher a melhor fonte **antes** de baixar qualquer coisa.
+
+Entrega pelo catalog-api:
+
+```
+https://catalog-api-v2.gocase.com.br/api/v1/public/line_item_image/{material}/{engine_identifier}/{image sem .png}.png
+```
+
+**Duas armadilhas:**
+
+1. **Exige o cookie do visitante.** Sem ele o endpoint responde
+   `503 {"error":"Fail"}` — que parece instabilidade e não é. O worker precisa
+   repassar o `cookie` da requisição para hosts `gocase.com.br`, como o
+   `aprovacao-licenciamento` já fazia.
+2. **É instável de verdade também.** Sempre tenha o preview do S3 como
+   reserva, tentando da maior resolução para a menor.
+
+Também aparecem stamps já no formato dos térmicos (ex.: `2754x1335`, que é a
+máscara da Garrafa Mini 350ml).

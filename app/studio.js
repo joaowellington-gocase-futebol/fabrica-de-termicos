@@ -40,7 +40,9 @@
     agentes: {},
     mascaras: [],
     case: null,        // {sku, nome, identifier, caminho, arte}
-    imagem: null,      // HTMLImageElement da arte
+    imagem: null,      // HTMLImageElement da arte (a de maior resolução que abriu)
+    alta: [],          // arquivos de produção do Factory, do maior para o menor
+    fonteUsada: null,  // qual deles vingou
     leitura: null,     // saída do agente Leitor
     cores: null,       // saída do agente Variação de cor
     colecao: null,     // saída do agente Set/Coleção
@@ -129,7 +131,7 @@
 
   // ══════════════════════════════ geometria ══════════════════════════════
 
-  /** Carrega a imagem pelo proxy, para o canvas poder ler os pixels. */
+  /** Carrega uma imagem pelo proxy, para o canvas poder ler os pixels. */
   function carregarImagem(url) {
     return new Promise(function (ok, erro) {
       var i = new Image();
@@ -137,6 +139,36 @@
       i.onload = function () { ok(i); };
       i.onerror = function () { erro(new Error("Não consegui carregar a arte.")); };
       i.src = prox(url);
+    });
+  }
+
+  /**
+   * Pega a MAIOR resolução que de fato abrir.
+   *
+   * O preview do catálogo tem ~851 px de largura; o arquivo de produção do
+   * mesmo desenho, no Factory, chega a 9080. Como a máscara do térmico tem
+   * 2754, é essa diferença que decide se o motivo sai nítido ou esticado.
+   *
+   * O arquivo de produção vem do catalog-api, que é instável e às vezes
+   * devolve 503 — então tenta um a um, do maior para o menor, e o preview
+   * fica como último recurso. Nunca falha por completo.
+   */
+  function carregarMelhorArte() {
+    var tentativas = (S.alta || []).map(function (a) {
+      return { url: a.url, rotulo: a.w + "x" + a.h + " · produção", w: a.w, h: a.h };
+    });
+    tentativas.push({ url: S.case.arte, rotulo: "preview do catálogo", w: 0, h: 0 });
+
+    return new Promise(function (ok, erro) {
+      var i = 0;
+      (function proxima() {
+        if (i >= tentativas.length) { erro(new Error("Nenhuma fonte de arte abriu.")); return; }
+        var t = tentativas[i++];
+        carregarImagem(t.url).then(function (img) {
+          S.fonteUsada = { rotulo: t.rotulo, w: img.naturalWidth, h: img.naturalHeight };
+          ok(img);
+        }).catch(function () { proxima(); });
+      })();
     });
   }
 
@@ -578,6 +610,7 @@
     function buscar(q) {
       res.innerHTML = '<div class="carregando"><span class="spin"></span>procurando…</div>';
       api("/api/case?q=" + encodeURIComponent(q)).then(function (j) {
+        S.alta = j.alta || [];
         if (!j.itens || !j.itens.length) {
           res.innerHTML = '<div class="vazio">' + esc(j.aviso || "Nada encontrado.") + '</div>';
           return;
@@ -906,7 +939,7 @@
       var b = $("sep");
       b.disabled = true; b.textContent = "Separando…";
       saida.innerHTML = '<div class="carregando"><span class="spin"></span>lendo os pixels…</div>';
-      var passo = S.imagem ? Promise.resolve(S.imagem) : carregarImagem(S.case.arte);
+      var passo = S.imagem ? Promise.resolve(S.imagem) : carregarMelhorArte();
       passo.then(function (img) {
         S.imagem = img;
         return new Promise(function (ok) {
@@ -917,6 +950,16 @@
           }, 30);
         });
       }).then(function () {
+        if (S.fonteUsada) {
+          var f = S.fonteUsada;
+          var boa = f.w >= 2000;
+          laudo.insertAdjacentHTML("afterbegin",
+            '<div class="pilulas" style="margin-bottom:8px">' +
+            '<span class="pil ' + (boa ? "ok" : "rm") + '">arte: ' + esc(f.rotulo) + '</span>' +
+            '<span class="pil">' + f.w + '×' + f.h + ' px</span>' +
+            (boa ? "" : '<span class="pil rm">o arquivo de produção não abriu — recorte sai menos nítido</span>') +
+            '</div>');
+        }
         desenhar(); mesaDeRecados(mesa); trilha();
         prox2.disabled = S.pecas.length === 0;
         toast(S.pecas.length + " peças recortadas" +

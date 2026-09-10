@@ -105,12 +105,17 @@ export default {
       try { u = new URL(alvo); } catch { return new Response('url inválida', { status: 400 }); }
       if (!IMG_HOSTS.includes(u.hostname)) return new Response('host não liberado', { status: 403 });
       try {
-        const up = await fetch(u.toString(), {
-          headers: {
-            'user-agent': request.headers.get('user-agent') || 'Mozilla/5.0',
-            accept: 'image/avif,image/webp,image/png,image/*,*/*;q=0.8',
-          },
-        });
+        const cab: Record<string, string> = {
+          'user-agent': request.headers.get('user-agent') || 'Mozilla/5.0',
+          accept: 'image/avif,image/webp,image/png,image/*,*/*;q=0.8',
+        };
+        // O catalog-api serve o arquivo de produção só para sessão autenticada
+        // — sem o cookie de quem está usando o app ele devolve 503 {"error":"Fail"}.
+        const ck = request.headers.get('cookie');
+        if (ck && (u.hostname.indexOf('gocase.com.br') >= 0 || u.hostname.indexOf('goengines') >= 0)) {
+          cab.cookie = ck;
+        }
+        const up = await fetch(u.toString(), { headers: cab });
         if (!up.ok) return new Response('a imagem respondeu ' + up.status, { status: 502 });
         return new Response(up.body, {
           headers: {
@@ -181,8 +186,63 @@ export default {
         // Sem duplicar a mesma arte várias vezes.
         const vistos = new Set<string>();
         const unicos = itens.filter((i) => !vistos.has(i.caminho) && vistos.add(i.caminho));
-        if (!unicos.length) return json({ q, itens: [], aviso: `Nada encontrado para "${q}".` });
-        return json({ q, itens: unicos.slice(0, 12) });
+
+        // ── Arte de PRODUÇÃO no Factory ────────────────────────────────────
+        // O preview do S3 tem ~851 px de largura; o arquivo de produção do
+        // mesmo desenho chega a 9080x3880. Como a máscara do térmico tem
+        // 2754 px, essa diferença decide se o motivo sai nítido ou esticado.
+        // A entrega é pelo catalog-api, que exige o cookie do visitante — por
+        // isso a URL passa pelo /api/img deste worker, e não vai direto ao
+        // cliente. Se o catalog-api falhar, o preview do S3 continua servindo.
+        let alta: unknown[] = [];
+        try {
+          const prods = await pg(
+            env, request, 'factory',
+            `public.products?or=(engine_identifier.eq.${q},sku.eq.${q})&select=id,sku,engine_identifier&limit=50`);
+          if (prods.length) {
+            const ids = prods.map((p2: any) => p2.id);
+            const [stamps, apm] = await Promise.all([
+              pg(env, request, 'factory',
+                 `public.stamps?product_id=in.(${ids.join(',')})&select=product_id,image,width,height&limit=500`),
+              pg(env, request, 'factory',
+                 `public.available_product_materials?product_id=in.(${ids.join(',')})&select=product_id,material_id&limit=500`),
+            ]);
+            const matIds = Array.from(new Set(apm.map((a: any) => a.material_id))).filter(Boolean);
+            const mats = matIds.length
+              ? await pg(env, request, 'factory',
+                         `public.materials?id=in.(${matIds.join(',')})&select=id,slug&limit=500`)
+              : [];
+            const slugPorId = new Map(mats.map((m: any) => [m.id, m.slug]));
+            const matPorProd = new Map<number, string>();
+            for (const a of apm as any[]) {
+              const sl = slugPorId.get(a.material_id);
+              if (sl && !matPorProd.has(a.product_id)) matPorProd.set(a.product_id, sl);
+            }
+            const prodPorId = new Map(prods.map((p2: any) => [p2.id, p2]));
+            const seen = new Set<string>();
+            alta = (stamps as any[])
+              .filter((st) => st.image && st.width && st.height)
+              .map((st) => {
+                const prod: any = prodPorId.get(st.product_id);
+                const material = matPorProd.get(st.product_id);
+                if (!prod || !material) return null;
+                const semExt = String(st.image).replace(/\.png$/i, '');
+                const url = `https://catalog-api-v2.gocase.com.br/api/v1/public/line_item_image/` +
+                            `${material}/${prod.engine_identifier}/${semExt}.png`;
+                return { url, w: st.width, h: st.height, material, px: st.width * st.height };
+              })
+              .filter((x): x is any => !!x && !seen.has(x.url) && !!seen.add(x.url))
+              .sort((a: any, b: any) => b.px - a.px)
+              .slice(0, 6);
+          }
+        } catch (e) {
+          console.log('factory alta:', (e as Error)?.message);
+        }
+
+        if (!unicos.length && !alta.length) {
+          return json({ q, itens: [], aviso: `Nada encontrado para "${q}".` });
+        }
+        return json({ q, itens: unicos.slice(0, 12), alta });
       }
 
       // Monta as URLs de mockup 2D no Prisma para as máscaras escolhidas.

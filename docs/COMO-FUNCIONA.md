@@ -25,8 +25,16 @@ A primeira versão do rapport escalava cada peça para preencher a célula da
 grade. Medido: ampliação **média 1,36×**, **pior caso 2,48×** — um ramo de
 330 px virava 900 px. Daí o borrão.
 
-Não adianta procurar fonte maior: o `catalog-api` responde 503, e o path de
-produção no S3 não existe (403 em `production`, `prod`, `originals`, `full`).
+A fonte maior existe, e eu tinha desistido cedo demais dela. O preview do S3
+não tem versão de produção (403 em `production`, `prod`, `originals`, `full`),
+mas o **Factory** guarda o arquivo de produção: para `ramos-de-lavanda`,
+**9080×3880** contra os 851×1742 do preview. O `catalog-api` respondia 503
+porque exige o cookie do visitante, não por estar fora do ar. Detalhes em
+[MAPA-ATIVOS.md §9](MAPA-ATIVOS.md).
+
+O estúdio agora tenta as fontes da maior para a menor e mostra qual vingou.
+Ainda assim, a correção geométrica abaixo continua valendo: o catalog-api é
+instável, e quando ele falha o preview de 851 px é o que resta.
 
 A saída é geométrica, não de origem: **repetir mais vezes em vez de ampliar**.
 A grade passou a ser calculada pelo tamanho nativo das peças, com teto de
