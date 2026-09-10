@@ -52,7 +52,7 @@ export const AGENTES: Agente[] = [
       'pessoa carrega o dia todo e mostra em público, se a estação do ano ajuda ou atrapalha, e ' +
       'se o tema não satura o catálogo (várias estampas florais competindo entre si). ' +
       'Formato: {"ranking":[{"estampa","posicao","score","racional","janela":"imediata|30d|sazonal:<mes>",' +
-      '"risco":"nenhum|sazonalidade|saturacao|licenca"}],"descartadas":[{"estampa","motivo"}],"confianca"}' +
+      '"risco":"nenhum|sazonalidade|saturacao|licenca"}],"descartadas":[{"estampa","motivo"}],"confianca":0-1}' +
       ' O racional tem no máximo 20 palavras e diz o PORQUÊ, não repete o número.' + JSON_ONLY,
     user: (e) => 'Estampas candidatas:\n' + e,
   },
@@ -65,22 +65,30 @@ export const AGENTES: Agente[] = [
     oque: 'Olha a estampa e diz se dá para separar os elementos. Decide o caminho de todo o resto.',
     visao: true,
     temperatura: 0.2,
-    exemplo: 'https://ik.imagekit.io/gocase/govinci/ramos-de-lavanda/infiniteair-iphone14/mockup',
+    exemplo: 'https://custom-case-images.s3.amazonaws.com/prisma-render/prod-v2/previews/ramos-de-lavanda/100688/standard-iphone11/17773150714228854032720886829191875.png',
     system:
       'Você analisa a arte de uma capinha que vai ser adaptada para uma garrafa térmica. ' +
       'A garrafa é cilíndrica: a arte dá a volta, então precisa virar padrão que se repete. ' +
       'Sua resposta decide o caminho: se os motivos podem ser RECORTADOS um a um e ' +
       'redistribuídos (separavel=true), ou se a arte é um fundo contínuo sem peças isoláveis ' +
       '(separavel=false). ' +
-      'ATENÇÃO — trave obrigatória: se houver texto legível, logo, monograma ou marca, marque ' +
-      'tem_texto ou tem_logo como true. Esses elementos não podem se repetir dando a volta na ' +
-      'garrafa. Na dúvida, marque true: errar para mais é barato, errar para menos publica ' +
-      'produto errado. ' +
+      'CONTEXTO IMPORTANTE: esta imagem vem do preview do catálogo, e o preview quase sempre ' +
+      'traz dois elementos que NÃO fazem parte da estampa — a marca "gocase" num canto, e uma ' +
+      'letra ou nome de exemplo da personalização (ex.: "A."). Os dois são REMOVIDOS antes da ' +
+      'adaptação. Liste-os em elementos_a_remover, dizendo onde estão, e NÃO os trate como ' +
+      'impedimento nem os inclua na lista de motivos. ' +
+      'Bloqueio é outra coisa: marque bloqueio_terceiro=true só se houver marca, personagem, ' +
+      'escudo de time, logo de empresa ou obra que pertença a TERCEIRO — nunca pela marca da ' +
+      'própria Gocase. Nesse caso, na dúvida marque true. ' +
+      'texto_na_arte é para texto que faz parte do desenho (uma frase, um versículo, um lettering ' +
+      'decorativo). Esse texto impede o padrão, porque ficaria se repetindo em volta da garrafa. ' +
       'Formato: {"tipo":"motivos_isolados|fundo_continuo|misto|composicao_central","separavel":bool,' +
       '"fundo":{"tipo":"solido|textura|transparente","cor":"#RRGGBB"},' +
       '"motivos":[{"nome","contagem_aprox","papel":"principal|secundario|ornamento"}],' +
+      '"elementos_a_remover":[{"tipo":"marca_gocase|texto_personalizacao|assinatura","onde"}],' +
       '"paleta":["#RRGGBB"],"estilo","densidade":"baixa|media|alta",' +
-      '"tem_texto":bool,"tem_logo":bool,"rota":"deterministica|generativa","confianca":0-1}' + JSON_ONLY,
+      '"texto_na_arte":bool,"bloqueio_terceiro":bool,' +
+      '"rota":"deterministica|generativa","confianca":0-1}' + JSON_ONLY,
     user: () => 'Analise esta arte para adaptação em garrafa térmica.',
   },
 
@@ -113,6 +121,7 @@ export const AGENTES: Agente[] = [
       'Estilos possíveis: "stickers" (motivos sobrepostos preenchendo), "linear" (grade regular), ' +
       '"distribuido" (grade em xadrez, linhas alternadas deslocadas), "localizada" (um bloco central). ' +
       'Densidade baixa pede motivo maior e grade em xadrez; densidade alta pede motivo menor e grade regular. ' +
+      'Ignore o que estiver em elementos_a_remover: marca da casa e letra de personalização saem antes de compor. ' +
       'Formato: {"estilo","escala_motivos":num,"densidade_alvo":0-1,"motivos_promover":[],' +
       '"motivos_descartar":[],"rotacao_permitida":bool,"margem_seguranca_pct":num,"racional","confianca"}' + JSON_ONLY,
     user: (e) => 'Monte o plano de composição:\n' + e,
@@ -126,7 +135,7 @@ export const AGENTES: Agente[] = [
     oque: 'Olha o padrão pronto e dá nota. Reprovou, volta para o Compositor.',
     visao: true,
     temperatura: 0.2,
-    exemplo: 'https://ik.imagekit.io/gocase/govinci/ramos-de-lavanda/infiniteair-iphone14/mockup',
+    exemplo: 'https://custom-case-images.s3.amazonaws.com/prisma-render/prod-v2/previews/ramos-de-lavanda/100688/standard-iphone11/17773150714228854032720886829191875.png',
     system:
       'Você recebe a imagem de um padrão que vai ser impresso dando a volta numa garrafa térmica. ' +
       'Julgue como quem vai receber o produto na mão. Procure, nesta ordem: ' +
@@ -149,17 +158,20 @@ export const AGENTES: Agente[] = [
     oque: 'Última porta antes do humano. Barra logo, texto e marca de terceiro.',
     visao: true,
     temperatura: 0.1,
-    exemplo: 'https://ik.imagekit.io/gocase/govinci/ramos-de-lavanda/infiniteair-iphone14/mockup',
+    exemplo: 'https://custom-case-images.s3.amazonaws.com/prisma-render/prod-v2/previews/ramos-de-lavanda/100688/standard-iphone11/17773150714228854032720886829191875.png',
     system:
-      'Você é o revisor de marca. Sua função é BARRAR, não aprovar por gentileza. ' +
-      'Procure na imagem: logotipo, marca registrada, símbolo de time, texto legível de qualquer ' +
-      'tamanho, assinatura de ilustrador, personagem ou elemento que pareça propriedade de ' +
-      'terceiro (estúdio, filme, jogo, banda, clube). ' +
-      'Gravidade alta = bloqueia a esteira e vai para conferência humana. Use alta para qualquer ' +
-      'suspeita de propriedade de terceiro ou marca; deixar passar custa muito mais caro do que ' +
-      'uma conferência a mais. ' +
-      'Formato: {"aprovado":bool,"achados":[{"tipo":"logo|texto|marca|ip_terceiro","onde",' +
-      '"gravidade":"alta|media|baixa"}],"bloqueia":bool,"confianca":0-1}' + JSON_ONLY,
+      'Você é o revisor de marca, e olha a arte JÁ ADAPTADA, pouco antes de ela ir ao catálogo. ' +
+      'Sua função é BARRAR, não aprovar por gentileza. ' +
+      'Procure: marca registrada, escudo de time, personagem, cena de filme, jogo ou série, ' +
+      'assinatura de ilustrador, e qualquer elemento que pareça pertencer a terceiro. ' +
+      'A marca "gocase" NÃO é motivo de bloqueio — é nossa. Se ela ainda aparecer, isso é falha ' +
+      'de limpeza: registre como tipo "marca_gocase" com gravidade media, para alguém remover. ' +
+      'Texto legível que faça parte do desenho é gravidade alta: repetido em volta da garrafa, ' +
+      'fica ilegível e estraga o produto. ' +
+      'Para propriedade de terceiro, na dúvida use gravidade alta — uma conferência a mais custa ' +
+      'muito menos que publicar errado. ' +
+      'Formato: {"aprovado":bool,"achados":[{"tipo":"ip_terceiro|marca_terceiro|texto|assinatura|marca_gocase",' +
+      '"onde","gravidade":"alta|media|baixa"}],"bloqueia":bool,"confianca":0-1}' + JSON_ONLY,
     user: () => 'Revise esta arte antes de ir para o catálogo.',
   },
 

@@ -70,6 +70,30 @@ tempo limite, JSON e medição.
 Geração de **imagem** não é aqui: é o PIAPP, e só entra no caminho de reserva,
 quando a arte é um fundo contínuo que não dá para recortar.
 
+## A arte do catálogo vem suja — e isso muda o recorte
+
+O preview que o catálogo serve **não é a estampa limpa**. Ele traz dois
+elementos queimados no arquivo:
+
+- a marca **gocase**, normalmente num canto
+- uma **letra ou nome de exemplo** da personalização (ex.: `A.`)
+
+Confirmado olhando o arquivo de `ramos-de-lavanda` no S3, e é o mesmo motivo
+pelo qual o `gerador-de-adaptacoes` já pedia no prompt dele para "ignorar logos,
+marcas d'água, monogramas e texto de personalização".
+
+Isso tem uma consequência prática: o Leitor **não pode** tratar logo e texto
+como bloqueio, senão trava 100% das estampas. Ele separa as duas coisas:
+
+| | O que é | O que acontece |
+|---|---|---|
+| `elementos_a_remover` | marca da casa, letra de personalização, assinatura | some antes do recorte |
+| `bloqueio_terceiro` | marca, personagem, escudo de time, obra de terceiro | para a esteira |
+| `texto_na_arte` | frase ou lettering que faz parte do desenho | para a esteira |
+
+O Leitor devolve **onde** cada elemento a remover está, e é isso que o recorte
+usa para limpar a arte antes de separar os motivos.
+
 ## Duas coisas verificadas que poupam tempo
 
 1. **`gold.estampa_opportunity` está furada.** Parece feita pra isso, mas o
