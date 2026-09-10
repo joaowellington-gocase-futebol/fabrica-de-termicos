@@ -167,10 +167,11 @@
     var fundo = new Uint8Array(W*H);
     var fila = new Int32Array(W*H), ini = 0, fim = 0;
 
-    function combina(o) {
+    function distCor(o) {
       var dr = d[o]-br, dg = d[o+1]-bg, db = d[o+2]-bb;
-      return (dr*dr + dg*dg + db*db) <= tol*tol;
+      return Math.sqrt(dr*dr + dg*dg + db*db);
     }
+    function combina(o) { return distCor(o) <= tol; }
     function semear(x, y) {
       var p = y*W + x;
       if (fundo[p]) return;
@@ -187,8 +188,77 @@
       if (py < H-1) semear(px, py+1);
     }
 
-    // apaga o fundo
-    for (var i = 0; i < W*H; i++) if (fundo[i]) d[i*4+3] = 0;
+    // Segunda passada: ILHAS de fundo.
+    //
+    // O preenchimento acima entra pelas quatro bordas, então só alcança o
+    // fundo que encosta na moldura. Um bolsão de papel cercado por folhas fica
+    // intocado — e pior, costuma estar colado ao desenho pela borda macia, de
+    // modo que cai no mesmo grupo e nem o teste de cor por grupo o separa.
+    //
+    // Aqui cada bolsão é varrido por conta própria. Some se for grande o
+    // bastante para ser fundo de verdade; bolsão minúsculo é detalhe claro do
+    // desenho (um miolo de flor, um brilho) e fica onde está.
+    var ilhaMin = Math.max(64, W * H * 0.0004);
+    var visit = new Uint8Array(W * H);
+    var buf = new Int32Array(W * H);
+    for (var si = 0; si < W * H; si++) {
+      if (fundo[si] || visit[si] || !combina(si * 4)) continue;
+      var bi = 0, bf = 0;
+      buf[bf++] = si; visit[si] = 1;
+      while (bi < bf) {
+        var bp = buf[bi++], bx = bp % W, by = (bp / W) | 0;
+        for (var oy = -1; oy <= 1; oy++) {
+          for (var ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            var mx2 = bx + ox, my2 = by + oy;
+            if (mx2 < 0 || my2 < 0 || mx2 >= W || my2 >= H) continue;
+            var mp = my2 * W + mx2;
+            if (visit[mp] || fundo[mp] || !combina(mp * 4)) continue;
+            visit[mp] = 1; buf[bf++] = mp;
+          }
+        }
+      }
+      if (bf >= ilhaMin) for (var k2 = 0; k2 < bf; k2++) fundo[buf[k2]] = 1;
+    }
+
+    // Apaga o fundo, suavizando SÓ a silhueta.
+    //
+    // Zerar o alpha de todo pixel de fundo devolve degrau de pixel na borda —
+    // a aquarela tem transição macia e o corte seco a destrói. Mas aplicar a
+    // rampa na região inteira é pior: num fundo de papel texturizado, milhares
+    // de pixels ficam meio transparentes e a textura reaparece como sujeira
+    // espalhada pela peça.
+    //
+    // Então: o fundo some inteiro, e o alpha parcial volta apenas na FRONTEIRA
+    // — os pixels de fundo que encostam no motivo. É ali, e só ali, que estava
+    // o serrilhado.
+    var alphaOrig = new Uint8Array(W * H);
+    for (var i = 0; i < W * H; i++) alphaOrig[i] = d[i * 4 + 3];
+    for (var i2 = 0; i2 < W * H; i2++) if (fundo[i2]) d[i2 * 4 + 3] = 0;
+
+    var faixaIni = tol * 0.72;
+    var faixa = Math.max(1, tol - faixaIni);
+    for (var y2 = 0; y2 < H; y2++) {
+      for (var x2 = 0; x2 < W; x2++) {
+        var pp = y2 * W + x2;
+        if (!fundo[pp]) continue;
+        // encosta em algo que não é fundo?
+        var naSilhueta = false;
+        for (var dy2 = -1; dy2 <= 1 && !naSilhueta; dy2++) {
+          for (var dx2 = -1; dx2 <= 1; dx2++) {
+            if (!dx2 && !dy2) continue;
+            var nx2 = x2 + dx2, ny2 = y2 + dy2;
+            if (nx2 < 0 || ny2 < 0 || nx2 >= W || ny2 >= H) continue;
+            if (!fundo[ny2 * W + nx2]) { naSilhueta = true; break; }
+          }
+        }
+        if (!naSilhueta) continue;
+        var dd = distCor(pp * 4);
+        if (dd <= faixaIni) continue;                       // é fundo mesmo: fica invisível
+        var f = Math.min(1, (dd - faixaIni) / faixa);
+        d[pp * 4 + 3] = Math.round(alphaOrig[pp] * f);       // meio caminho: borda macia
+      }
+    }
 
     // grupos conectados no que sobrou
     var lab = new Int32Array(W*H), atual = 0, grupos = [];
@@ -196,10 +266,12 @@
       if (lab[s] || fundo[s] || d[s*4+3] < 24) continue;
       atual++;
       var minx = W, miny = H, maxx = 0, maxy = 0, n = 0;
+      var sr = 0, sg = 0, sb = 0;
       ini = 0; fim = 0; fila[fim++] = s; lab[s] = atual;
       while (ini < fim) {
         var q = fila[ini++], qx = q % W, qy = (q / W) | 0;
         n++;
+        sr += d[q*4]; sg += d[q*4+1]; sb += d[q*4+2];
         if (qx < minx) minx = qx; if (qx > maxx) maxx = qx;
         if (qy < miny) miny = qy; if (qy > maxy) maxy = qy;
         for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
@@ -211,7 +283,8 @@
           lab[np] = atual; fila[fim++] = np;
         }
       }
-      grupos.push({ id: atual, minx: minx, miny: miny, maxx: maxx, maxy: maxy, n: n });
+      grupos.push({ id: atual, minx: minx, miny: miny, maxx: maxx, maxy: maxy, n: n,
+                    cr: sr/n, cg: sg/n, cb: sb/n });
     }
 
     // Peça que cobre quase o canvas inteiro é o fundo que escapou do flood-fill
@@ -221,7 +294,14 @@
     grupos = grupos.filter(function (g) {
       if (g.n < areaMin) return false;
       var gw = g.maxx-g.minx+1, gh = g.maxy-g.miny+1;
-      return !(gw >= W*0.85 && gh >= H*0.85);
+      // fundo inteiro que escapou do preenchimento
+      if (gw >= W*0.85 && gh >= H*0.85) return false;
+      // ILHA DE FUNDO: bolsão de papel cercado por folhas, que o preenchimento
+      // não alcança porque não encosta em borda nenhuma. A cor entrega: se a
+      // média do grupo é a cor do papel, aquilo não é desenho.
+      var dr = g.cr - br, dg2 = g.cg - bg, db = g.cb - bb;
+      if (Math.sqrt(dr*dr + dg2*dg2 + db*db) <= tol * 0.85) return false;
+      return true;
     }).sort(function (a, b) { return b.n - a.n; }).slice(0, 40);
 
     // recorta cada grupo, mantendo só os pixels DELE
@@ -233,7 +313,21 @@
       var out = ctx.createImageData(gw, gh), od = out.data;
       for (var yy = 0; yy < gh; yy++) for (var xx = 0; xx < gw; xx++) {
         var src = (g.miny+yy)*W + (g.minx+xx), dst = (yy*gw + xx)*4;
-        if (lab[src] !== g.id) continue;
+        // do próprio motivo, ou pixel de silhueta que encosta nele
+        if (lab[src] !== g.id) {
+          if (lab[src] !== 0 || d[src*4+3] === 0) continue;
+          var vizinhoDoGrupo = false;
+          var sx = g.minx+xx, sy = g.miny+yy;
+          for (var vy = -1; vy <= 1 && !vizinhoDoGrupo; vy++) {
+            for (var vx = -1; vx <= 1; vx++) {
+              if (!vx && !vy) continue;
+              var ax = sx+vx, ay = sy+vy;
+              if (ax < 0 || ay < 0 || ax >= W || ay >= H) continue;
+              if (lab[ay*W + ax] === g.id) { vizinhoDoGrupo = true; break; }
+            }
+          }
+          if (!vizinhoDoGrupo) continue;
+        }
         od[dst] = d[src*4]; od[dst+1] = d[src*4+1]; od[dst+2] = d[src*4+2]; od[dst+3] = d[src*4+3];
       }
       ctx.putImageData(out, 0, 0);

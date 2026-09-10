@@ -42,6 +42,38 @@ Reduzir não custa nitidez; ampliar custa. Por isso o teto é 1,0 — e é tamb�
 por isso que pedir motivo maior tem preço: a etiqueta na entrega avisa quando
 a peça foi esticada.
 
+## Por que os assets saíam serrilhados
+
+O PNG nítido resolveu o esticão, mas as peças continuavam com degrau de pixel
+na silhueta. A causa não era resolução: era o recorte **binarizando** a borda.
+
+A arte é aquarela, com transição macia entre motivo e papel. O preenchimento
+zerava o alpha de todo pixel de fundo, de uma vez — e a transição virava
+escada.
+
+A primeira tentativa foi trocar o corte seco por uma rampa aplicada à região
+inteira de fundo. Piorou muito: num papel texturizado, milhares de pixels
+ficaram meio transparentes e a textura voltou como sujeira espalhada pela peça
+(29% dos pixels com alpha parcial, contra ~2% de uma silhueta real).
+
+O que funciona é aplicar a rampa **só na fronteira** — os pixels de fundo que
+encostam no motivo. O miolo do fundo some inteiro; a borda volta macia.
+
+Duas correções vieram junto, porque apareceram no mesmo teste:
+
+- **Bolsão de papel cercado pelo desenho.** O preenchimento entra pelas quatro
+  bordas, então não alcança um vazio no meio das folhas — e como esse vazio
+  costuma estar colado ao desenho pela borda macia, cai no mesmo grupo e nem o
+  teste de cor por grupo o separa. Agora cada bolsão é varrido por conta
+  própria, e some se for grande o bastante para ser fundo de verdade.
+- **Respingo do motivo vizinho.** Um pixel de borda só entra na peça se
+  encostar no próprio motivo; antes, qualquer pixel solto dentro da caixa
+  delimitadora entrava junto.
+
+Verificação: peça ampliada 4× em *nearest neighbor* — o teste mais severo, que
+mostra o pixel cru sem suavização do navegador. Silhueta macia, fundo limpo,
+sem respingo.
+
 ## Sobre medir a emenda
 
 A medição passou por duas versões erradas antes de assentar. A primeira exigia
