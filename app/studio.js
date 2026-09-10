@@ -30,6 +30,7 @@
     pecas: [],         // [{canvas, x, y, w, h, area, on}]
     rotabPrompt: null, // rota generativa: prompt de geração (visão -> texto, PIAPP)
     escolhidas: [],    // chaves de máscara
+    plano: null,       // saída do agente Compositor
     saidas: []         // [{mascara, canvas, mockup}]
   };
 
@@ -264,7 +265,13 @@
     var n = pecas.length;
     var cols = Math.max(2, Math.round(Math.sqrt(n * (L/A) * 1.6)));
     var rows = Math.max(2, Math.ceil(n / cols) + 1);
-    var cw = L / cols, ch = A / rows;
+
+    // Margem só em cima e embaixo. Na horizontal não existe borda: o desenho
+    // continua do outro lado. Na vertical existe, e motivo encostando ali sai
+    // cortado no produto — foi o primeiro defeito que o Auditor apontou.
+    var margemY = A * (opts.margemPct != null ? opts.margemPct : 0.035);
+    var areaY = A - margemY*2;
+    var cw = L / cols, ch = areaY / rows;
 
     var idx = 0;
     for (var r = 0; r < rows; r++) {
@@ -272,7 +279,7 @@
         var pe = pecas[idx % n]; idx++;
         var off = (stagger && (r % 2)) ? cw/2 : 0;
         var ccx = c*cw + cw/2 + off;
-        var ccy = r*ch + ch/2;
+        var ccy = margemY + r*ch + ch/2;
 
         var cabe = Math.min(cw*0.82, ch*0.82) * escala;
         var k = Math.min(cabe / pe.w, cabe / pe.h);
@@ -870,9 +877,13 @@
         'etapa anterior. A costura não é garantida por construção aqui — ela é medida na entrega, como ' +
         'na rota determinística.</div>'
       : '<div style="margin-top:14px;font-size:13px;color:var(--muted)">' +
-        'O padrão é montado com as peças que você deixou ligadas, e a costura é fechada desenhando ' +
+        'Ao gerar, o Compositor decide escala e arranjo para o formato de cada máscara. ' +
+        'O padrão usa as peças que você deixou ligadas, e a costura é fechada desenhando ' +
         'cada peça também em <span class="mono">x−L</span> e <span class="mono">x+L</span>.</div>');
     v.bd.appendChild(nota);
+    var planoBox = el("div");
+    planoBox.style.marginTop = "10px";
+    v.bd.appendChild(planoBox);
     palco.appendChild(v.p);
 
     var ger = el("button", "btn primary", "Gerar os padrões");
@@ -881,27 +892,74 @@
     v.ft.appendChild(ger);
 
     ger.addEventListener("click", function () {
+      // Fundo contínuo não tem peça pra recortar: vai pro PIAPP, sem Compositor.
       if (rotaGenerativa()) { gerarViaPiapp(ger); return; }
-      ger.disabled = true; ger.textContent = "Gerando…";
+      ger.disabled = true; ger.textContent = "Consultando o Compositor…";
       var pecas = S.pecas.filter(function (p) { return p.on; });
       if (!pecas.length) { toast("Ligue pelo menos uma peça na etapa anterior.", true); ger.disabled = false; return; }
+
+      var m0 = S.mascaras.filter(function (x) { return x.chave === S.escolhidas[0]; })[0];
+      var entrada = JSON.stringify({
+        mascara: { produto: m0.label, largura: m0.w, altura: m0.h },
+        leitura: {
+          tipo: S.leitura.tipo, separavel: S.leitura.separavel,
+          densidade: S.leitura.densidade, estilo: S.leitura.estilo,
+          motivos: S.leitura.motivos
+        },
+        pecas_recortadas: pecas.length
+      }, null, 2);
+
+      rodar("compositor", entrada).then(function (r) {
+        if (r.ok) {
+          S.plano = r.dados;
+          planoBox.innerHTML =
+            '<div class="pilulas"><span class="pil ok">plano do Compositor</span>' +
+            '<span class="pil">' + esc(S.plano.estilo || "—") + '</span>' +
+            '<span class="pil">escala ' + esc(S.plano.escala_motivos || 1) + '</span>' +
+            '<span class="pil">margem ' + esc(S.plano.margem_seguranca_pct || 3.5) + '%</span></div>' +
+            '<div style="font-size:12.5px;color:var(--muted);margin-top:5px">' +
+            esc(S.plano.racional || "") + '</div>';
+        } else {
+          S.plano = null;
+          planoBox.innerHTML = '<div style="font-size:12.5px;color:var(--warn)">' +
+            'O Compositor não respondeu — seguindo com o arranjo padrão.</div>';
+        }
+      }).catch(function () {
+        S.plano = null;
+        planoBox.innerHTML = '<div style="font-size:12.5px;color:var(--warn)">' +
+          'O Compositor não respondeu — seguindo com o arranjo padrão.</div>';
+      }).then(function () {
+        ger.textContent = "Montando os padrões…";
+        montar();
+      });
+
+      function montar() {
       setTimeout(function () {
         S.saidas = S.escolhidas.map(function (ch) {
           var m = S.mascaras.filter(function (x) { return x.chave === ch; })[0];
-          var cv = comporRapport(pecas, m.w, m.h, { escala: 1, stagger: true });
+          // Se o Compositor rodou, o plano dele manda: escala e estilo saem de lá.
+          var plano = S.plano || {};
+          var esc2 = Math.min(1.8, Math.max(0.6, Number(plano.escala_motivos) || 1));
+          var cv = comporRapport(pecas, m.w, m.h, {
+            escala: esc2,
+            stagger: plano.estilo !== "linear",
+            margemPct: plano.margem_seguranca_pct ? plano.margem_seguranca_pct/100 : 0.035,
+          });
           return { mascara: m, canvas: cv, costura: medirCostura(cv) };
         });
         ger.disabled = false; ger.textContent = "Gerar os padrões";
         trilha(); ir(6);
       }, 30);
+      }
     });
   }
 
   // ---------- 7. entrega ----------
   function etapaEntrega(palco) {
     var v = painel("Entrega",
-      "PNG de produção no tamanho exato da máscara, mockup 2D montado pelo Prisma, e a prévia em 3D " +
-      "para conferir a arte dando a volta.");
+      "PNG de produção no tamanho exato da máscara, mockup 2D montado pelo Prisma e prévia em 3D. " +
+      "Em <b>conferir</b>, o Auditor dá nota no padrão e o Revisor procura marca de terceiro — os dois " +
+      "olham o arquivo montado, não a arte de origem.");
     var g = el("div", "entrega");
 
     S.saidas.forEach(function (s) {
@@ -945,6 +1003,10 @@
       ver.href = "#";
       ver.addEventListener("click", function (ev) { ev.preventDefault(); montar3D(s); });
       ft.appendChild(ver);
+      var conf = el("a", null, "conferir");
+      conf.href = "#";
+      conf.addEventListener("click", function (ev) { ev.preventDefault(); conferir(s, c); });
+      ft.appendChild(conf);
       var cost = el("span", "mono");
       var bom = s.costura.razao <= 2.5;
       cost.style.cssText = "margin-left:auto;font-size:10.5px;color:" +
@@ -972,6 +1034,64 @@
     v.ft.appendChild(voltar);
 
     if (S.saidas.length) setTimeout(function () { montar3D(S.saidas[0]); }, 60);
+  }
+
+  /**
+   * Manda o padrão montado para o Auditor e o Revisor.
+   * O canvas não tem endereço público, então vai como data URL — reduzido a
+   * 900px, que é o suficiente para julgar composição e sobra bem menos byte.
+   */
+  function conferir(s, cartao) {
+    var alvo = cartao.querySelector("[data-conf]");
+    if (!alvo) {
+      alvo = el("div");
+      alvo.setAttribute("data-conf", "1");
+      alvo.style.cssText = "padding:10px 12px;border-top:1px solid var(--line);font-size:12.5px";
+      cartao.appendChild(alvo);
+    }
+    alvo.innerHTML = '<div class="carregando"><span class="spin"></span>Auditor e Revisor olhando…</div>';
+
+    var mini = document.createElement("canvas");
+    var k = Math.min(1, 900 / s.canvas.width);
+    mini.width = Math.round(s.canvas.width * k);
+    mini.height = Math.round(s.canvas.height * k);
+    var mx = mini.getContext("2d");
+    mx.fillStyle = "#ffffff";            // fundo branco: transparência vira xadrez e confunde o modelo
+    mx.fillRect(0, 0, mini.width, mini.height);
+    mx.drawImage(s.canvas, 0, 0, mini.width, mini.height);
+    var dataUrl = mini.toDataURL("image/jpeg", 0.88);
+
+    Promise.all([
+      rodar("auditor", dataUrl).catch(function (e) { return { ok: false, erro: e.message }; }),
+      rodar("revisor", dataUrl).catch(function (e) { return { ok: false, erro: e.message }; })
+    ]).then(function (rs) {
+      var a = rs[0], r = rs[1];
+      var h = "";
+      if (a.ok && a.dados) {
+        var nota = Number(a.dados.nota);
+        var cor = nota >= 7 ? "var(--ok)" : "var(--warn)";
+        h += '<div style="display:flex;gap:8px;align-items:baseline"><b style="color:' + cor +
+             '">Auditor: ' + (isNaN(nota) ? "—" : nota) + '/10</b><span style="color:var(--muted)">' +
+             esc(a.dados.veredito || "") + '</span></div>';
+        (a.dados.problemas || []).slice(0, 3).forEach(function (pp) {
+          h += '<div style="color:var(--muted);margin-top:3px">• ' + esc(pp) + '</div>';
+        });
+      } else {
+        h += '<div style="color:var(--crit)">Auditor falhou: ' + esc(a.erro || "") + '</div>';
+      }
+      if (r.ok && r.dados) {
+        var bloq = !!r.dados.bloqueia;
+        h += '<div style="margin-top:7px"><b style="color:' + (bloq ? "var(--crit)" : "var(--ok)") + '">' +
+             (bloq ? "Revisor: bloqueia" : "Revisor: liberado") + '</b></div>';
+        (r.dados.achados || []).forEach(function (ac) {
+          h += '<div style="color:var(--muted);margin-top:2px">• ' + esc(ac.tipo) + " · " +
+               esc(ac.onde) + " · " + esc(ac.gravidade) + '</div>';
+        });
+      } else {
+        h += '<div style="color:var(--crit)">Revisor falhou: ' + esc(r.erro || "") + '</div>';
+      }
+      alvo.innerHTML = h;
+    });
   }
 
   // ---------- 3D ----------

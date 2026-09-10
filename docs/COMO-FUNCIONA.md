@@ -155,7 +155,27 @@ descoberta depois. Por isso `medirCostura()` roda igual nas duas rotas, e a
 Entrega mostra "emenda visível/invisível" nos dois casos. Requer o segredo
 `PIAPP_TOKEN` (`setAppSecret`), além do `AI_PROXY_TOKEN` já usado pelos
 agentes.
+## O que os agentes erraram, e o que mudou
 
+Cada refino abaixo veio de rodar o agente contra dado real e olhar a resposta.
+
+| Agente | O que saiu errado | O que mudou no prompt |
+|---|---|---|
+| Compositor | devolveu `escala_motivos: 620` — pensou em pixel | dito que é **multiplicador de 0,6 a 1,8** |
+| Batizador | devolveu `jardim-de-lavanda-termicos`, inventando slug a partir do nome novo e quebrando o vínculo com a capinha | o identificador vem de `estampa_origem`, **nunca** do nome criado |
+| Auditor | reclamava de motivo cortado na lateral — que é justamente como o rapport funciona | dito que corte lateral **não é defeito**; corte em cima e embaixo é |
+| Leitor | marcava `tem_logo` em toda estampa e travaria 100% | separa `elementos_a_remover` de `bloqueio_terceiro` |
+
+Depois dos refinos, no padrão real de `ramos-de-lavanda`:
+
+- **Auditor**: nota 6,2, reprovado — apontou corte na base, contraste de escala
+  irregular, vazios competindo com aglomerados e a grade ficando visível. Os
+  quatro conferem na imagem. Não reclamou das laterais.
+- **Revisor**: aprovado, sem achados — a marca e o `A.` já tinham saído.
+
+O corte na base era bug de código, não do agente: a grade ia até a borda. O
+rapport ganhou margem vertical. Na horizontal não há margem de propósito — ali
+o desenho continua do outro lado.
 ## Duas coisas verificadas que poupam tempo
 
 1. **`gold.estampa_opportunity` está furada.** Parece feita pra isso, mas o

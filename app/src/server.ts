@@ -193,8 +193,12 @@ export default {
 
         const entrada = String(b.entrada || '').trim();
         if (!entrada) return json({ error: 'Escreva a entrada antes de rodar.' }, 400);
-        if (ag.visao && !/^https?:\/\//i.test(entrada)) {
-          return json({ error: 'Este agente lê imagem: a entrada precisa ser uma URL http(s).' }, 400);
+        // Agente de visão aceita URL pública OU data URL. O data URL é o que
+        // permite auditar o padrão recém-montado, que só existe como canvas no
+        // navegador e não tem endereço público nenhum.
+        const ehImagem = /^https?:\/\//i.test(entrada) || /^data:image\/(png|jpeg|webp);base64,/i.test(entrada);
+        if (ag.visao && !ehImagem) {
+          return json({ error: 'Este agente lê imagem: mande uma URL http(s) ou um data URL.' }, 400);
         }
 
         let system = String(b.system || '').trim();
@@ -209,7 +213,8 @@ export default {
         await env.DB.exec(
           `INSERT INTO execucoes (agente, entrada, saida, ok, ms, tokens, quem)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [ag.chave, entrada.slice(0, 2000),
+          [ag.chave,
+           /^data:/i.test(entrada) ? '(imagem gerada, ' + Math.round(entrada.length/1024) + ' KB)' : entrada.slice(0, 2000),
            JSON.stringify(r.ok ? r.dados : { erro: r.erro }).slice(0, 4000),
            r.ok ? 1 : 0, r.ms, r.tokens ?? null, quem]);
 

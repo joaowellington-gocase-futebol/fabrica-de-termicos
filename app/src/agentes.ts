@@ -175,8 +175,10 @@ export const AGENTES: Agente[] = [
       '"distribuido" (grade em xadrez, linhas alternadas deslocadas), "localizada" (um bloco central). ' +
       'Densidade baixa pede motivo maior e grade em xadrez; densidade alta pede motivo menor e grade regular. ' +
       'Ignore o que estiver em elementos_a_remover: marca da casa e letra de personalização saem antes de compor. ' +
-      'Formato: {"estilo","escala_motivos":num,"densidade_alvo":0-1,"motivos_promover":[],' +
-      '"motivos_descartar":[],"rotacao_permitida":bool,"margem_seguranca_pct":num,"racional","confianca"}' + JSON_ONLY,
+      'escala_motivos é um MULTIPLICADOR sobre o tamanho que a peça teria na grade, entre 0.6 e 1.8: ' +
+      '1.0 mantém, 1.4 aumenta 40%, 0.7 encolhe. Não é pixel, não é porcentagem, e nunca passa de 1.8. ' +
+      'Formato: {"estilo","escala_motivos":0.6-1.8,"densidade_alvo":0-1,"motivos_promover":[],' +
+      '"motivos_descartar":[],"rotacao_permitida":bool,"margem_seguranca_pct":num,"racional","confianca":0-1}' + JSON_ONLY,
     user: (e) => 'Monte o plano de composição:\n' + e,
   },
 
@@ -185,21 +187,28 @@ export const AGENTES: Agente[] = [
     chave: 'auditor',
     nome: 'Auditor',
     dono: '',
-    oque: 'Olha o padrão pronto e dá nota. Reprovou, volta para o Compositor.',
+    oque: 'Olha o padrão montado e dá nota. Reprovou, volta para o Compositor.',
     visao: true,
     temperatura: 0.2,
     exemplo: 'https://custom-case-images.s3.amazonaws.com/prisma-render/prod-v2/previews/ramos-de-lavanda/100688/standard-iphone11/17773150714228854032720886829191875.png',
     system:
-      'Você recebe a imagem de um padrão que vai ser impresso dando a volta numa garrafa térmica. ' +
-      'Julgue como quem vai receber o produto na mão. Procure, nesta ordem: ' +
-      '1) motivo cortado ao meio de um jeito que pareça erro, e não recorte proposital; ' +
-      '2) área vazia grande demais, que faz a garrafa parecer sem arte; ' +
-      '3) aglomeração que vira borrão de longe; ' +
-      '4) desequilíbrio entre topo e base. ' +
-      'Nota de 0 a 10. Abaixo de 7 a peça volta para nova composição, então seja específico no ' +
-      'que precisa mudar — "ficou ruim" não ajuda ninguém. ' +
+      'Você recebe o PADRÃO JÁ MONTADO — não a arte da capinha. Ele é um ladrilho que será ' +
+      'impresso dando a volta na garrafa: a borda direita encosta na esquerda. ' +
+      'Duas coisas que NÃO são defeito aqui, e você não deve apontar: ' +
+      '(a) motivo cortado na borda esquerda ou direita — ele continua do outro lado quando enrola, ' +
+      'é assim que o padrão funciona; (b) fundo transparente ou xadrez de transparência. ' +
+      'Corte nas bordas de CIMA e de BAIXO é defeito, porque ali não há continuidade. ' +
+      'Julgue como quem vai receber o produto na mão, nesta ordem: ' +
+      '1) vazio grande que faz a garrafa parecer sem arte; ' +
+      '2) aglomeração que vira borrão a um metro de distância; ' +
+      '3) motivo cortado no topo ou na base; ' +
+      '4) ritmo irregular — pedaços densos brigando com pedaços vazios; ' +
+      '5) repetição óbvia demais, com o olho achando a grade. ' +
+      'Nota de 0 a 10. Abaixo de 7 a peça volta para nova composição, então diga o que mudar em ' +
+      'termos que o compositor executa: estilo e escala. "Ficou ruim" não ajuda ninguém. ' +
       'Formato: {"nota":0-10,"problemas":["..."],"veredito":"aprovado|ajustar|reprovado",' +
-      '"ajuste_sugerido":{"estilo","escala"},"confianca":0-1}' + JSON_ONLY,
+      '"ajuste_sugerido":{"estilo":"stickers|linear|distribuido|localizada","escala":0.6-1.8},' +
+      '"confianca":0-1}' + JSON_ONLY,
     user: () => 'Avalie este padrão para impressão em garrafa térmica.',
   },
 
@@ -246,8 +255,11 @@ export const AGENTES: Agente[] = [
     system:
       'Você nomeia estampas da Gocase. Sugira 3 nomes curtos, de 2 a 5 palavras, em português: ' +
       'descritivos e vendáveis, sem aspas, sem numeração, sem emoji, e sem repetir nome já usado. ' +
-      'Gere também o identificador do produto seguindo a convenção real do catálogo: o slug da ' +
-      'estampa em minúsculas com hífens, terminando em "-termicos". ' +
+      'O identificador NÃO é derivado do nome que você criou. Ele é o campo estampa_origem que ' +
+      'veio na entrada, com "-termicos" no fim, e nada mais: se estampa_origem é ' +
+      '"ramos-de-lavanda", o identificador é "ramos-de-lavanda-termicos", mesmo que o nome ' +
+      'escolhido seja outro. É esse sufixo que amarra o térmico à capinha que já vende; trocar o ' +
+      'slug quebra o vínculo no catálogo. ' +
       'A descrição tem 1 ou 2 frases e fala do objeto no dia a dia de quem carrega, não da técnica. ' +
       'Formato: {"nomes":["..","..",".."],"recomendado":"..","engine_identifier":"<slug>-termicos",' +
       '"descricao":"..","tags":[".."],"confianca":0-1}' + JSON_ONLY,
