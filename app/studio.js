@@ -20,12 +20,13 @@
   // ══════════════════════════════ tema claro/escuro ══════════════════════════════
   (function initTema() {
     var btn = document.getElementById("tema-btn");
+    var label = document.getElementById("tema-label");
     if (!btn) return;
     function aplicar(t) {
       document.documentElement.dataset.theme = t;
       try { localStorage.setItem("tema-termicos", t); } catch (e) {}
-      btn.textContent = t === "dark" ? "Modo claro" : "Modo escuro";
-      btn.setAttribute("aria-pressed", String(t === "light"));
+      if (label) label.textContent = t === "dark" ? "Modo claro" : "Modo escuro";
+      btn.setAttribute("aria-label", t === "dark" ? "Mudar para o modo claro" : "Mudar para o modo escuro");
     }
     aplicar(document.documentElement.dataset.theme === "light" ? "light" : "dark");
     btn.addEventListener("click", function () {
