@@ -287,7 +287,13 @@
    */
   function comporRapport(pecas, L, A, opts) {
     opts = opts || {};
-    var escala = opts.escala || 1;
+    var escalaPedida = Math.max(0.3, Math.min(1.8, opts.escala || 1));
+    // Teto de ampliação. A arte de origem é o preview da capinha (~851 px de
+    // largura) e a máscara do térmico tem 2754: a área de impressão do térmico
+    // é 4x maior em pixels. Esticar a peça para preencher a máscara borra —
+    // media 1,36x e pior caso 2,48x na versão anterior. A saída é repetir mais
+    // vezes em vez de ampliar: acima de 1 a peça perde definição de verdade.
+    var teto = opts.maxUpscale != null ? opts.maxUpscale : 1;
     var stagger = opts.stagger !== false;
     var fundo = opts.fundo || null;
 
@@ -300,30 +306,35 @@
 
     if (!pecas.length) return cv;
 
-    // grade proporcional ao número de peças e ao formato da máscara
-    var n = pecas.length;
-    var cols = Math.max(2, Math.round(Math.sqrt(n * (L/A) * 1.6)));
-    var rows = Math.max(2, Math.ceil(n / cols) + 1);
-
-    // Margem só em cima e embaixo. Na horizontal não existe borda: o desenho
-    // continua do outro lado. Na vertical existe, e motivo encostando ali sai
-    // cortado no produto — foi o primeiro defeito que o Auditor apontou.
     var margemY = A * (opts.margemPct != null ? opts.margemPct : 0.035);
-    var areaY = A - margemY*2;
+    var areaY = A - margemY * 2;
+
+    // A célula sai do tamanho NATIVO das peças, não da contagem delas. É o que
+    // decide quantas cabem — e o que impede o esticão.
+    var lados = pecas.map(function (p) { return Math.max(p.w, p.h); })
+                     .sort(function (a, b) { return a - b; });
+    var tipico = lados[lados.length >> 1] || 1;
+    var celula = (tipico * escalaPedida) / 0.88;         // 0.88 = respiro; menor = padrão mais cheio
+
+    var cols = Math.max(2, Math.round(L / celula));
+    var rows = Math.max(2, Math.round(areaY / celula));
     var cw = L / cols, ch = areaY / rows;
 
-    var idx = 0;
+    var n = pecas.length, idx = 0, somaK = 0, contK = 0, piorK = 0;
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
         var pe = pecas[idx % n]; idx++;
-        var off = (stagger && (r % 2)) ? cw/2 : 0;
-        var ccx = c*cw + cw/2 + off;
-        var ccy = margemY + r*ch + ch/2;
+        var off = (stagger && (r % 2)) ? cw / 2 : 0;
+        var ccx = c * cw + cw / 2 + off;
+        var ccy = margemY + r * ch + ch / 2;
 
-        var cabe = Math.min(cw*0.82, ch*0.82) * escala;
-        var k = Math.min(cabe / pe.w, cabe / pe.h);
+        var cabe = Math.min(cw, ch) * 0.82;
+        // reduzir é de graça; ampliar custa nitidez, então tem teto
+        var k = Math.min(cabe / pe.w, cabe / pe.h, escalaPedida * teto);
         var w = pe.w * k, h = pe.h * k;
-        var x = ccx - w/2, y = ccy - h/2;
+        var x = ccx - w / 2, y = ccy - h / 2;
+
+        somaK += k; contK++; if (k > piorK) piorK = k;
 
         // a mesma peça, três vezes: é isso que fecha a emenda
         cx.drawImage(pe.canvas, x - L, y, w, h);
@@ -331,21 +342,29 @@
         cx.drawImage(pe.canvas, x + L, y, w, h);
       }
     }
+    cv._nitidez = { media: contK ? somaK / contK : 1, pior: piorK, grade: cols + "x" + rows,
+                    repeticoes: cols * rows };
     return cv;
   }
 
   /**
-   * Mede a emenda. Ao enrolar na garrafa, a última coluna encosta na primeira —
-   * elas são VIZINHAS, não iguais. Então o teste não é "são idênticas?", e sim
-   * "o salto na emenda é do mesmo tamanho do salto entre duas colunas quaisquer
-   * lá dentro?". Razão perto de 1 quer dizer que a emenda não se distingue do
-   * resto do desenho: costura invisível.
+   * Mede a emenda comparando-a com a variação natural do próprio desenho.
+   *
+   * Ao enrolar na garrafa, a última coluna encosta na primeira: são VIZINHAS,
+   * não iguais. Então a pergunta não é "o salto é zero?", e sim "esse salto se
+   * destaca dos saltos que já existem dentro do desenho?".
+   *
+   * A primeira versão comparava com a mediana dos saltos internos, e isso
+   * enganava: num padrão esparso a maioria das colunas cai em área vazia, a
+   * mediana despenca e qualquer emenda parece enorme. Agora a emenda é
+   * posicionada na distribuição inteira — se existem colunas internas com salto
+   * maior, a emenda não é achável a olho.
    */
   function medirCostura(cv) {
     var cx = cv.getContext("2d", { willReadFrequently: true });
     var W = cv.width, H = cv.height;
 
-    function saltoEntre(x1, x2) {
+    function salto(x1, x2) {
       var a = cx.getImageData(x1, 0, 1, H).data;
       var b = cx.getImageData(x2, 0, 1, H).data;
       var s = 0;
@@ -356,13 +375,29 @@
       return s / (H * 4);
     }
 
-    var emenda = saltoEntre(W-1, 0);
-    var refs = [W>>3, W>>2, (W*3)>>3, W>>1, (W*5)>>3, (W*3)>>2].map(function (x) {
-      return saltoEntre(x, x+1);
-    }).sort(function (a, b) { return a-b; });
-    var interna = refs[refs.length >> 1] || 0.01;   // mediana
+    var emenda = salto(W - 1, 0);
 
-    return { emenda: emenda, interna: interna, razao: emenda / Math.max(interna, 0.01) };
+    // amostragem densa o bastante para a distribuição significar algo
+    var passo = Math.max(4, Math.floor(W / 150));
+    var internos = [];
+    for (var x = 0; x < W - 1; x += passo) internos.push(salto(x, x + 1));
+    internos.sort(function (a, b) { return a - b; });
+
+    var piores = internos.filter(function (v) { return v > emenda; }).length;
+    var percentil = internos.length
+      ? Math.round(100 * internos.filter(function (v) { return v < emenda; }).length / internos.length)
+      : 0;
+
+    return {
+      emenda: emenda,
+      mediana: internos[internos.length >> 1] || 0,
+      maior: internos[internos.length - 1] || 0,
+      percentil: percentil,
+      piores: piores,
+      // Invisível quando o desenho já tem, em vários pontos, saltos desse
+      // tamanho. Percentil 100 com zero colunas piores é costura de verdade.
+      invisivel: piores >= 2,
+    };
   }
 
   // ══════════════════════════════ navegação ══════════════════════════════
@@ -1019,7 +1054,7 @@
             stagger: plano.estilo !== "linear",
             margemPct: plano.margem_seguranca_pct ? plano.margem_seguranca_pct/100 : 0.035,
           });
-          return { mascara: m, canvas: cv, costura: medirCostura(cv) };
+          return { mascara: m, canvas: cv, costura: medirCostura(cv), nitidez: cv._nitidez };
         });
         ger.disabled = false; ger.textContent = "Gerar os padrões";
         trilha(); ir(6);
@@ -1053,7 +1088,7 @@
       var im = document.createElement("img");
       im.loading = "lazy"; im.alt = "Mockup " + s.mascara.label;
       im.src = prox("https://ik.imagekit.io/gocase/govinci/" + s.mascara.sku + "/" +
-                    s.mascara.mat + "/mockup?stamp=" + S.case.caminho + "&expires=yes&tr=w-500");
+                    s.mascara.mat + "/mockup?stamp=" + S.case.caminho + "&expires=yes&tr=w-1000");
       d2.appendChild(im);
       par.appendChild(d1); par.appendChild(d2);
       c.appendChild(par);
@@ -1082,12 +1117,32 @@
       conf.addEventListener("click", function (ev) { ev.preventDefault(); conferir(s, c); });
       ft.appendChild(conf);
       var cost = el("span", "mono");
-      var bom = s.costura.razao <= 2.5;
+      // Na rota determinística a emenda fecha por construção — cada peça é
+      // desenhada em x-L, x e x+L. A medição fica como conferência de
+      // regressão. Na rota generativa não há garantia nenhuma, e aí a medição
+      // é o único teste que existe.
+      var gerado = !!s.geradoPorIA;
+      var bom = gerado ? s.costura.invisivel : true;
       cost.style.cssText = "margin-left:auto;font-size:10.5px;color:" +
         (bom ? "var(--ok)" : "var(--warn)");
       cost.title = "salto na emenda " + s.costura.emenda.toFixed(1) +
-                   " · salto normal dentro do desenho " + s.costura.interna.toFixed(1);
-      cost.textContent = bom ? "emenda invisível" : "emenda visível (" + s.costura.razao.toFixed(1) + "×)";
+                   " · maior salto dentro do desenho " + s.costura.maior.toFixed(1) +
+                   " · " + s.costura.piores + " colunas internas saltam mais que a emenda";
+      cost.textContent = gerado
+        ? (bom ? "emenda confere" : "emenda suspeita")
+        : "emenda fecha por construção";
+      if (s.nitidez) {
+        var nit = el("span", "mono");
+        var esticou = s.nitidez.pior > 1.02;
+        nit.style.cssText = "font-size:10.5px;margin-left:10px;color:" +
+          (esticou ? "var(--warn)" : "var(--ok)");
+        nit.title = "grade " + s.nitidez.grade + " · " + s.nitidez.repeticoes + " repetições · " +
+                    "ampliação média " + s.nitidez.media.toFixed(2) + "x";
+        nit.textContent = esticou
+          ? "esticado " + s.nitidez.pior.toFixed(2) + "x"
+          : "sem esticar";
+        ft.appendChild(nit);
+      }
       ft.appendChild(cost);
       c.appendChild(ft);
       g.appendChild(c);

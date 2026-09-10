@@ -15,6 +15,52 @@
 Curador, Auditor, Revisor e Batizador continuam disponíveis como agentes e
 entram na esteira automática; o estúdio é o caminho manual, para o ilustrador.
 
+## Por que o PNG saía borrado
+
+A área impressa da capinha tem cerca de **1,5 Mpx**; a da Fresh 650 tem
+**6,4 Mpx**. Adaptar case→térmico é sempre subir de resolução, e a arte de
+origem é o preview do catálogo, com 851 px de largura.
+
+A primeira versão do rapport escalava cada peça para preencher a célula da
+grade. Medido: ampliação **média 1,36×**, **pior caso 2,48×** — um ramo de
+330 px virava 900 px. Daí o borrão.
+
+Não adianta procurar fonte maior: o `catalog-api` responde 503, e o path de
+produção no S3 não existe (403 em `production`, `prod`, `originals`, `full`).
+
+A saída é geométrica, não de origem: **repetir mais vezes em vez de ampliar**.
+A grade passou a ser calculada pelo tamanho nativo das peças, com teto de
+ampliação em 1,0.
+
+| | antes | depois |
+|---|---|---|
+| grade | 7×6 (42 repetições) | 15×12 (180 repetições) |
+| ampliação média | 1,36× | **0,80×** |
+| ampliação pior | 2,48× | **1,00×** |
+
+Reduzir não custa nitidez; ampliar custa. Por isso o teto é 1,0 — e é também
+por isso que pedir motivo maior tem preço: a etiqueta na entrega avisa quando
+a peça foi esticada.
+
+## Sobre medir a emenda
+
+A medição passou por duas versões erradas antes de assentar. A primeira exigia
+que a primeira e a última coluna fossem **idênticas** — não são: ao enrolar,
+elas ficam vizinhas. A segunda comparava o salto da emenda com a **mediana**
+dos saltos internos, e isso engana num padrão esparso, onde a maioria das
+colunas cai em área vazia e a mediana despenca.
+
+A versão atual posiciona a emenda na distribuição inteira dos saltos internos.
+Mas há um limite honesto: com padrão denso, poucos motivos cruzam a borda, e a
+medição perde poder de discriminar — no controle sem wrap ela também passou.
+
+Por isso o rótulo agora depende da rota:
+
+- **determinística**: "emenda fecha por construção". É verdade matemática —
+  cada peça é desenhada em `x−L`, `x` e `x+L`. Não depende de medir.
+- **generativa (PIAPP)**: aí não há garantia nenhuma, e a medição é o único
+  teste que existe.
+
 ## Medido, não prometido
 
 O separador e o rapport rodaram na estampa real `ramos-de-lavanda`
